@@ -4,8 +4,9 @@ node_modules/
 lib/
 *.tsbuildinfo
 *.log
-# 本机 agent 记忆（mesync 文档 + 决策库）——不入远端
-.mesync/
+# 项目记忆随仓库走（团队/换机共享）；仅剔除 SQLite 运行时临时文件（随运行重建，无归档价值）
+.mesync/db/*.db-shm
+.mesync/db/*.db-wal
 
 # 运行期视频工作区产物（本仓库作为插件代码仓，不承载用户工作区数据）
 .dvd/
