@@ -11,3 +11,6 @@ lib/
 .dvd/
 .dvd.config.json
 .preview/
+
+# 本机 ssh 会话驻留文件（known_hosts）——不入远端
+.ssh/
