@@ -1,0 +1,13 @@
+# 忽略：npm 缓存 / 依赖 / 构建产物
+.npm-cache/
+node_modules/
+lib/
+*.tsbuildinfo
+*.log
+# 本机 agent 记忆（mesync 文档 + 决策库）——不入远端
+.mesync/
+
+# 运行期视频工作区产物（本仓库作为插件代码仓，不承载用户工作区数据）
+.dvd/
+.dvd.config.json
+.preview/

@@ -1,0 +1,15 @@
+# dsh-video-design bundle 配置层
+# 作为 dsh.bundle 被引用（package.json -> "dsh": {"bundle": {"patch": "./cordis.patch.yml"}}），
+# 由 dsh.profile.bundles 自动加载；插件行 name 用包名（dsh-video-design）解析，id 保持 video（短 id，供 patch 定位）。
+
+- insert:
+    - id: video
+      name: 'dsh-video-design'
+      config:
+        seedanceModel: 'seedance-2.0-fast'
+        defaultDuration: 5
+        defaultQuality: '720p'
+        defaultAspectRatio: '16:9'
+        budgetCredits: 0
+        referenceMode: true
+        maxRecallDecisions: 5
