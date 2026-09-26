@@ -149,6 +149,6 @@ dsh-video-design/
 │   ├── workspace/  db/         ← 骨架初始化 · 工作区 sqlite 记忆索引
 │   └── config/  index.ts       ← 配置 schema · Cordis 入口
 ├── test/                       ← 单元测试（40 个）
-├── cordis.patch.yml            ← bundle 清单（name: dsh-video-design, id: video）
+├── cordis.patch.yml            ← bundle 清单（id/name 一致：dsh-video-design）
 └── README.md                   ← 本设计文档
 ```

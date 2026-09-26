@@ -1,9 +1,13 @@
 # dsh-video-design bundle 配置层
 # 作为 dsh.bundle 被引用（package.json -> "dsh": {"bundle": {"patch": "./cordis.patch.yml"}}），
-# 由 dsh.profile.bundles 自动加载；插件行 name 用包名（dsh-video-design）解析，id 保持 video（短 id，供 patch 定位）。
+# 由 dsh.profile.bundles 自动加载。
+# 契约（对照 dsh 宿主 cordis-plugin-loader / cordis-plugin-include 源码）：
+# - name = 加载契约：loader 按 entry.name import 模块，必须等于包名 dsh-video-design；
+# - id = 条目句柄（供后续 patch 定位/查重/配置回写），缺省会随机生成导致配置改写 churn——与 name 保持一致是推荐写法；
+# - 本补丁块自身不写 id（写了会被解读为「插入目标组的 id」而非插件 id）。
 
 - insert:
-    - id: video
+    - id: dsh-video-design
       name: 'dsh-video-design'
       config:
         seedanceModel: 'seedance-2.0-fast'

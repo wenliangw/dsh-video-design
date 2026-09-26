@@ -30,4 +30,4 @@ dsh-video-design 是运行在 DeepSeek Harness(dsh) 里的**视频创作插件**
 
 ## 状态
 
-设计讨论定稿（v2，README.md 为完整设计文档）；**v1 首版已交付并推送远端**（github.com/wenliangw/dsh-video-design master `be96c136`，本机 git 传输层 GnuTLS 握手失败改走 GitHub API 直推+逐文件内容等价校验，40 单测全绿）；单包结构（包名 dsh-video-design，源码在 `src/`，非多包 monorepo；`.dvd` 名即 dsh-Video-Design 缩写）+ doctrine（11 轴/12 卡/3 组合包）+ seeddance adapter + 7 工具 + 三块注入面（全文件驱动，代码零提示词）+ 工作区行为配置生效 + 6 rules/10 skills 航运资产；profile 挂载与实际场景功能测试待用户 dsh 环境（晚间开始）。
+设计讨论定稿（v2，README.md 为完整设计文档）；**v1 首版已交付并推送远端**（github.com/wenliangw/dsh-video-design master；本机 git HTTPS 传输层 GnuTLS 握手失败，已切 SSH remote 正常推拉，见 corrections/env-git-push.md）；单包结构（包名 dsh-video-design，源码在 `src/`，非多包 monorepo；`.dvd` 名即 dsh-Video-Design 缩写）+ doctrine（11 轴/12 卡/3 组合包）+ seeddance adapter + 7 工具 + 三块注入面（全文件驱动，代码零提示词）+ 工作区行为配置生效 + 6 rules/10 skills 航运资产 + `.mesync` 项目记忆随仓库走（敏感审计通过）；profile 挂载与实际场景功能测试待用户 dsh 环境（晚间开始）。
