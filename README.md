@@ -112,7 +112,7 @@ video-workspace/                  ← 视频工作区根
 - **注入面三块，全部文件驱动**：① **能力速览表**（常驻；读 `.dvd/capabilities.md`，缺失回退航运母版 `CAPABILITIES.md`——dvd 介绍 + 激活三态 + 11 轴/手法卡/组合包/7 工具/记忆五块/出片契约/红线整合一张表，用户可自行编辑调整）→ ② 心法总纲（故事 `AGENTS.md` 原文，缺失回退航运母版 `AGENT_TEMPLATE.md`）→ ③ Story Context 投影（overview/品味/进度/素材/纠错/决策动态数据）。
 - **提示词纪律**：插件代码**不写死任何注入提示词**——注入内容一律读文件（航运母版 / 工作区可编辑副本 / 故事文件）；用户改文件即改行为，不必改代码发版。
 - **心法静动分层**：静态（能力库 + skills + 速览表/总纲航运母版，随包）保证首日可用；动态（wiki/tastes/decisions/material/corrections 投影）保证越用越像你。
-- **skills 家族**：上游创作链（`_story` 口述情节→故事结构 / `_novel2story` 小说→故事结构 / `_screenplay` 故事→分集剧本 / `_script2shot` 剧本→拍片计划）· transform 组（`_compile` 逐镜收敛/确认卡、`_svg_preview` 绘制规范）· adapter 组（`_seedance` 转译句法、厂商最佳实践、计费表）· 记忆整理组（sync wiki/taste/decision/correction + `_init_story`）。
+- **skills 家族**：上游创作链（`_story` 口述情节→故事结构 / `_novel2story` 小说→故事结构 / `_screenplay` 故事→分集剧本 / `_script2shot` 剧本→拍片计划）· transform 组（`_compile` 逐镜收敛/确认卡、`_svg_preview` 绘制规范）· adapter 组（`_seedance` 转译句法、厂商最佳实践、计费表、`_seedance_config` 配置引导）· 记忆整理组（sync wiki/taste/decision/correction + `_init_story`）。
 - **rules 家族**（判定与边界层，动手前先读）：`_workspace`（目录/配置契约）、`_sync_wiki` / `_sync_decision` / `_sync_taste` / `_material`（四块记忆的判定规范）、`_correction`（纠错纪律）。出片底线（幂等/dry-run/预算）不成 rule——已是代码硬闸 + 红线，避免三处重复漂移。
 
 ## API 调用与成本
