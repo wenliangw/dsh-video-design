@@ -38,12 +38,11 @@
 
 ### 家族能力配置化（用户声明即用，不随插件发版）
 
-上表同时是**内置预设**：已登记家族的时长范围、参考图/首尾帧上限、generate_audio 策略由契约默认生效，用户无需填写。但厂商更新不会停在预设里——用户在 `.dvd.config.json` 的 adapter 条目可做两层声明：
+上表是**纯人面参考**：契约机面（`api.json`）不内置任何按模型/家族区分的事实——时长范围、参考图/首尾帧上限、generate_audio 策略全部由用户在 `.dvd.config.json` 的 adapter 条目用 `caps` 四字段声明（必填，缺项 `generate_shot` 显式拒绝并给模板），`family` 可选、仅作显示标签。填 caps 时照上表抄数，但**以官方文档/方舟控制台为准**：
 
-- `"family": "<家族名>"` — 显式声明家族。Endpoint ID（`ep-*`）等前缀里没有家族信息的 ID，用这一条直接复用某已登记家族的预设。
-- `"caps": { "durationRange": [4, 15], "maxReferenceImages": 9, "maxFirstLastFrame": 2, "generateAudio": "explicit-false" }` — 家族能力声明：已登记家族可选填（部分覆盖预设）；**未登记家族（新家族）四项必须齐备**——插件不为未知家族编造参数。
+- `"caps": { "durationRange": [4, 15], "maxReferenceImages": 9, "maxFirstLastFrame": 2, "generateAudio": "explicit-false" }` — 家族能力声明：四字段必填，插件不代编任何值。
 
-`generateAudio` 取值：`explicit-false`（家族支持该参数——v1 恒发 false 保持无声承诺）/ `omit`（家族无该参数，字段不携带）。未登记家族缺声明时 `generate_shot` 拒绝并给出可复制的配置模板。
+`generateAudio` 取值：`explicit-false`（家族支持该参数——v1 恒发 false 保持无声承诺）/ `omit`（家族无该参数，字段不携带）。声明即用、无需插件发版——厂商上新模型/新家族，用户当天声明当天可用，插件发版只跟 API 形态变化走。
 
 ### 当前在售版本（2026-10-02 交叉核对，以方舟控制台 model-list 为准）
 

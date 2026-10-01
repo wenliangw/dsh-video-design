@@ -18,7 +18,7 @@ import {
   estimate, buildStandardSentence, toRequest, validateReferenceInput,
   createGeneration, getTask, extraDoneStatuses, extraFailedStatuses,
   readShotRecord, writeShotRecord, extractVideoUrl,
-  familyOf, resolveCapabilities,
+  resolveCapabilities,
   type ShotJSON, type ShotRecord, type CapsOverride,
 } from '../adapters/seedance/seedance.js'
 import {
@@ -384,10 +384,9 @@ export function registerTools(ctx: Context, config: Config): void {
       }
       const apiBase = resolved.baseUrl
 
-      // ---- 家族能力解析（配置化）：用户 .dvd.config.json 的 family / caps 声明 > 契约预设 ----
-      // 未登记家族（新家族 / Endpoint ID / 拼写错误）不编造参数——引导用户配置后声明即用，无需插件发版。
-      const familyLabel: string | null = resolved.family?.trim() || familyOf(model)
-      const capsRes = resolveCapabilities(familyLabel, resolved.caps as CapsOverride | undefined)
+      // ---- 家族能力解析（完全配置化）：契约不内置任何按模型/家族区分的事实，能力必须由用户 caps 声明 ----
+      const capsLabel = resolved.family?.trim() || model
+      const capsRes = resolveCapabilities(capsLabel, resolved.caps as CapsOverride | undefined)
       if (!capsRes.caps) return capsRes.error ?? '家族能力解析失败。'
       const caps = capsRes.caps
 
@@ -432,7 +431,7 @@ export function registerTools(ctx: Context, config: Config): void {
         '## 🎬 镜头编译预览',
         `**标准层（可倒解析回 11 域）**：${buildStandardSentence(shot)}`,
         `**厂商层（${adapterName} prompt 全文）**：${plan.vendorPrompt}`,
-        `**参数**：adapter=${adapterName}｜family=${plan.family}（${caps.source === 'preset' ? '契约预设' : '用户配置'}）｜model=${plan.model}｜duration=${plan.duration}s｜resolution=${plan.resolution}｜ratio=${plan.ratio}${plan.body.generate_audio === false ? '｜generate_audio=false（v1 无声承诺）' : ''}`,
+        `**参数**：adapter=${adapterName}｜family=${plan.family}（caps 用户声明）｜model=${plan.model}｜duration=${plan.duration}s｜resolution=${plan.resolution}｜ratio=${plan.ratio}${plan.body.generate_audio === false ? '｜generate_audio=false（v1 无声承诺）' : ''}`,
         referenceUrls.length ? `**参考图**：${referenceUrls.length} 张，role=${plan.referenceRoles.join('/')}` : '**参考图**：无（纯文生视频）',
         `**成本预估**：${cost.pricingNote}`,
       ]

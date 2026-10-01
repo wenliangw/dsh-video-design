@@ -20,7 +20,7 @@ api.json 只装「是什么」（What），不装「怎么做」（How）——�
 
 - 提交：`POST /api/v3/contents/generations/tasks`（baseUrl 覆盖链：.dvd.config.json > `SEEDANCE_BASE_URL` 环境变量 > api.json 默认 `https://ark.cn-beijing.volces.com`），Bearer Ark API Key。响应仅含任务 `id`（无状态字段，7 天有效）——归一化 `{task_id, status:'queued'}`。
 - 请求体：`model`（版本化 ID，**无内置默认**——用户须在 `.dvd.config.json` 显式设置或设 `SEEDANCE_MODEL` 环境变量，未设置时 generate_shot 拒绝；在售版本表见契约 overview「当前在售版本」，仅作选择参考）、`content[]`（首条 `{type:'text'}` prompt + 可选 `{type:'image_url', image_url:{url, role}}`）、resolution（480p/720p/1080p/4k）、ratio（16:9/4:3/1:1/3:4/9:16/21:9/adaptive）、duration（按家族 clamp：2.5 [4,30] / 2.0 系列 [4,15] / 1.0 系列 [2,12]）、generate_audio（官方默认 true，仅 2.5/2.0 系列）、watermark（默认 false，恒显式）。
-- 家族门控配置化：已登记家族（api.json familyByIdPrefix 最长前缀命中）走契约预设（durationRange / 参考图与首尾帧上限 / generateAudio 策略）；未登记家族**不退回编造值**——由用户在 .dvd.config.json adapter 条目声明 `family`（复用预设）或 `caps`（四项能力声明），声明即用、无需插件发版；未知且未声明 → generate_shot 拒绝并给可复制的配置模板。
+- 家族门控完全配置化：api.json **不内置任何按模型/家族区分的事实**（无前缀表、无时长/图片/audio 家族表）；能力（durationRange 时长 clamp / 参考图与首尾帧上限 / generate_audio 策略）必须由用户在 .dvd.config.json adapter 条目的 `caps` 四字段声明，`family` 可选仅作显示标签；缺项 → generate_shot 拒绝并给可复制模板；参考值见 overview「模型家族」表（人面参考）。声明即用、无需发版——插件发版只跟 API 形态变化走。
 - 轮询：`GET /api/v3/contents/generations/tasks/{id}`（路径待官方查询页核实，标记 `getTaskVerified:false`）；状态词 queued/running/succeeded/failed/expired。**无积分/余额查询 API**（getCredits 已整个移除）——余额与用量以方舟控制台为准。
 - 错误：400/401/403/429/5xx HTTP 语义 + 业务码 `InvalidParameter.TaskTypeConstraint` / `InvalidParameter.TaskTypeMismatch`（异步报错）→ 契约表逐条中文化。
 

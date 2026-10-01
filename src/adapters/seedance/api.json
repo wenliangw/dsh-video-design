@@ -7,37 +7,8 @@
       "getTask": "/api/v3/contents/generations/tasks/{id}"
     }
   },
-  "models": {
-    "familyByIdPrefix": {
-      "doubao-seedance-2-5": "2.5",
-      "doubao-seedance-2-0-fast": "2.0fast",
-      "doubao-seedance-2-0-mini": "2.0mini",
-      "doubao-seedance-2-0": "2.0",
-      "doubao-seedance-1-0-pro-fast": "1.0profast",
-      "doubao-seedance-1-0-pro": "1.0pro"
-    }
-  },
   "request": {
     "promptMaxCharsZh": 500,
-    "durationRangeByFamily": {
-      "2.5": [4, 30],
-      "2.0": [4, 15],
-      "2.0fast": [4, 15],
-      "2.0mini": [4, 15],
-      "1.0pro": [2, 12],
-      "1.0profast": [2, 12]
-    },
-    "generateAudio": {
-      "supportedFamilies": ["2.5", "2.0", "2.0fast", "2.0mini"]
-    },
-    "imageCountsByFamily": {
-      "2.5": { "maxReference": 30, "maxFirstLastFrame": 2 },
-      "2.0": { "maxReference": 9, "maxFirstLastFrame": 2 },
-      "2.0fast": { "maxReference": 9, "maxFirstLastFrame": 2 },
-      "2.0mini": { "maxReference": 9, "maxFirstLastFrame": 2 },
-      "1.0pro": { "maxReference": 0, "maxFirstLastFrame": 2 },
-      "1.0profast": { "maxReference": 0, "maxFirstLastFrame": 1 }
-    },
     "watermarkDefault": false
   },
   "task": {

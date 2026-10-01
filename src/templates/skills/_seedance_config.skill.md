@@ -6,7 +6,7 @@
 ## 0. 什么时候用本心法
 
 - 用户要求配置 / 更换 seedance 凭证、模型、家族能力（含「帮我配好生成」「换个模型」「API Key 报错」等）。
-- `generate_shot` / `video_task` 因配置缺失或错误被拒：缺 key、缺模型、模型家族未登记、401、参数类 400。
+- `generate_shot` / `video_task` 因配置缺失或错误被拒：缺 key、缺模型、caps 能力声明缺失/非法、401、参数类 400。
 - 创建新工作区后用户首次开跑前的初始化引导。
 
 ## 1. 字段全解（.dvd.config.json 的 adapter 条目）
@@ -17,11 +17,11 @@
 | `baseUrl` | API 基地址 | 覆盖链：本文件 > 环境变量 `SEEDANCE_BASE_URL` > 契约默认。**区域语义**：key / 模型端点必须在同一 region，默认 cn-beijing；换 region 要查官方区域文档，不能用猜的 |
 | `apiKey` | 方舟 Ark API Key | 留空回退环境变量 `SEEDANCE_API_KEY`。红线：不向用户索要全文（让用户自己填文件/设环境变量），不打印、不回显、不写入任何记忆档案 |
 | `model` | 必填，无内置默认 | 两种形态：**版本化 Model ID**（前缀=家族、日期=版本，如 `doubao-seedance-2-0-fast-260128`）或 **Endpoint ID**（`ep-*`，字符串里没有家族信息）。**不得代编**：以用户方舟控制台 model-list 为准，或按 `overview.md`「当前在售版本」表核对（该表可能过期，标了核对日期） |
-| `family` | 显式声明家族名 | 当前缀解析不认识模型 ID 时用（Endpoint ID / 全新家族）。填一个已登记家族名（2.5 / 2.0 / 2.0fast / 2.0mini / 1.0pro / 1.0profast）= 整套预设复用，一行解决 |
-| `caps.durationRange` | 家族时长范围 `[最短秒, 最长秒]` | 客户端会按它 clamp 并**恒显式传值**（官方 `-1`=模型自选，v1 不用）。填错最短值（比如 2.5 家族最小 4 填成 2）会被静默 clamp——数字必须查官方文档，不拍脑袋 |
-| `caps.maxReferenceImages` | 参考图上限张数 | **0 = 该家族不支持参考图**（1.0 系列就是）。注意角色语义：3+ 张图（或 reference_mode）走 `reference_image`；1–2 张走首/尾帧角色 |
-| `caps.maxFirstLastFrame` | 首尾帧上限 | 1 = 仅支持首帧；2 = 支持首尾帧。与 maxReferenceImages 是两回事 |
-| `caps.generateAudio` | **语义陷阱最大的一项** | `explicit-false` = 家族**支持**该参数（v1 恒发 false，守无声承诺）；`omit` = 家族**不支持**该参数（请求不携带）。选错的两类后果：对不支持的家族发字段 → 服务端 400；对支持的家族 omit → 官方默认 true → 成片有声，无声承诺失守。默认方向选 `explicit-false`（宁可透明 400 也不静默出声） |
+| `family` | 可选显示标签 | 仅出现在预览/报错的 family= 处；**不再承载任何能力复用**（契约不内置家族预设）——能力全部由 caps 声明。填「2.5」这类家族名只是为了消息可读 |
+| `caps.durationRange` | 家族时长范围 `[最短秒, 最长秒]` | **必填**。客户端按它 clamp 并**恒显式传值**（官方 `-1`=模型自选，v1 不用）。填错最短值（比如上限 4 填成 2）会被静默 clamp——数字必须查官方文档，不拍脑袋 |
+| `caps.maxReferenceImages` | 参考图上限张数 | **必填**。**0 = 该家族不支持参考图**（如 1.0 系列）。角色语义：3+ 张图（或 reference_mode）走 `reference_image`；1–2 张走首/尾帧角色 |
+| `caps.maxFirstLastFrame` | 首尾帧上限 | **必填**。1 = 仅支持首帧；2 = 支持首尾帧。与 maxReferenceImages 是两回事 |
+| `caps.generateAudio` | **必填，语义陷阱最大的一项** | `explicit-false` = 家族**支持**该参数（v1 恒发 false，守无声承诺）；`omit` = 家族**不支持**该参数（请求不携带）。选错的两类后果：对不支持的家族发字段 → 服务端 400；对支持的家族 omit → 官方默认 true → 成片有声，无声承诺失守。默认方向选 `explicit-false`（宁可透明 400 也不静默出声） |
 
 ## 2. 配置流程（引导用户，不代猜）
 
@@ -40,7 +40,7 @@
 ## 3. 报错 ↔ 配置动作速查
 
 - 「未配置模型」→ 补 `adapters[].model`（或 `SEEDANCE_MODEL`）
-- 「未在契约已登记家族内」→ 补 `family`（复用预设）或 `caps` 四字段（新家族）
+- 「家族能力未完整声明 / 缺少…」→ 按报错列出的缺项补 `caps` 四字段（契约无内置预设，参考值抄 overview「模型家族」表）
 - 401 鉴权失败 → 查 apiKey / Endpoint 权限 / region 是否匹配
 - 400 参数不符合要求 → 查 duration/resolution 与家族上限（契约表），或参考图张数/角色
 - 业务码 `TaskTypeConstraint` / `TaskTypeMismatch` → 参考图数量与 role 语义和任务类型不兼容

@@ -31,12 +31,8 @@ interface SeedanceContract {
     baseUrlEnv: string
     paths: { createGeneration: string; getTask: string }
   }
-  models: { familyByIdPrefix: Record<string, string> }
   request: {
     promptMaxCharsZh: number
-    durationRangeByFamily: Record<string, [number, number]>
-    generateAudio: { supportedFamilies: string[] }
-    imageCountsByFamily: Record<string, { maxReference: number; maxFirstLastFrame: number }>
     watermarkDefault: boolean
   }
   task: {
@@ -80,35 +76,12 @@ export function defaultBaseUrl(): string {
   return env?.trim() || contract().endpoints.baseUrl
 }
 
-// ---------- 模型家族 ----------
-
-export type SeedanceFamily = '2.5' | '2.0' | '2.0fast' | '2.0mini' | '1.0pro' | '1.0profast'
-
-/** 按 Model ID 前缀解析家族（最长前缀优先——不依赖 JSON 键插入顺序，任意加行都安全） */
-export function familyOf(model: string): SeedanceFamily | null {
-  const map = contract().models.familyByIdPrefix
-  const keys = Object.keys(map).sort((a, b) => b.length - a.length)
-  for (const key of keys) {
-    if (model.startsWith(key)) return map[key] as SeedanceFamily
-  }
-  // 未登记家族（新家族 / Endpoint ID / 拼写错误）：一律不回退编造值——
-  // 由用户在 .dvd.config.json 声明能力（resolveCapabilities），未声明则显式拒绝。
-  return null
-}
-
-/** 家族 duration 范围（秒）；未登记家族返回 null（不编造兜底值） */
-export function durationRangeOf(family: string): [number, number] | null {
-  const table = contract().request.durationRangeByFamily as Record<string, [number, number]>
-  const range = table[family]
-  return range ? [range[0], range[1]] : null
-}
-
-// ---------- 家族能力（配置化：用户 .dvd.config.json 声明 > 契约预设，无编造兜底） ----------
+// ---------- 家族能力（完全配置化：契约不内置任何按模型/家族区分的事实，100% 用户声明） ----------
 
 /** generate_audio 携带策略：explicit-false=家族支持参数（v1 恒发 false 守无声承诺）；omit=家族无此参数 */
 export type AudioPolicy = 'explicit-false' | 'omit'
 
-/** 用户的家族能力声明（.dvd.config.json adapter 条目的 caps 字段；全部可选=已登记家族的部分覆盖） */
+/** 用户的家族能力声明（.dvd.config.json adapter 条目的 caps 字段；四字段全部必填——插件不代编任何家族能力） */
 export interface CapsOverride {
   /** 时长范围 [最短秒, 最长秒] */
   durationRange?: [number, number]
@@ -120,88 +93,55 @@ export interface CapsOverride {
   generateAudio?: AudioPolicy
 }
 
-/** 解析后的家族能力（参数闸门的唯一事实源） */
+/** 解析后的家族能力（clamp/校验/请求体的唯一事实源） */
 export interface FamilyCaps {
-  /** 家族标签（已登记家族名或用户声明值） */
+  /** 显示标签（用户 family 声明，或回退 Model ID） */
   family: string
-  /** preset = 纯契约预设；configured = 含用户声明/覆盖 */
-  source: 'preset' | 'configured'
   durationRange: [number, number]
   maxReferenceImages: number
   maxFirstLastFrame: number
   generateAudio: AudioPolicy
 }
 
-/** 已登记家族 → 契约预设能力；未登记返回 null（不编造） */
-function presetFor(family: string): Omit<FamilyCaps, 'family' | 'source'> | null {
-  const range = durationRangeOf(family)
-  const images = (contract().request.imageCountsByFamily as Record<string, { maxReference: number; maxFirstLastFrame: number }>)[family]
-  if (!range || !images) return null
-  const audio: AudioPolicy = contract().request.generateAudio.supportedFamilies.includes(family) ? 'explicit-false' : 'omit'
-  return { durationRange: range, maxReferenceImages: images.maxReference, maxFirstLastFrame: images.maxFirstLastFrame, generateAudio: audio }
-}
-
 const AUDIO_POLICIES: readonly AudioPolicy[] = ['explicit-false', 'omit']
 
-/** 未登记家族的引导错误（配置化：声明即用，无需插件发版） */
-function unknownFamilyError(familyLabel: string | null): string {
-  const shown = familyLabel ? `模型家族「${familyLabel}」` : '该模型 ID 的前缀'
-  return `${shown}未在契约已登记家族内（可能是新家族、Endpoint ID 或拼写错误）。插件不为未知家族编造参数——请在 .dvd.config.json 该 adapter 条目补能力声明后重试（声明即用，无需等插件发版）：
+/** 缺能力声明时的引导错误（配置化：声明即用，无需插件发版） */
+function capsRequiredError(label: string, missing: string): string {
+  return `模型「${label}」的家族能力未完整声明（插件契约不内置任何按模型/家族区分的事实，不代编参数）——请在 .dvd.config.json 该 adapter 条目补 caps，声明即用，无需等插件发版：
   "caps": { "durationRange": [4, 15], "maxReferenceImages": 9, "maxFirstLastFrame": 2, "generateAudio": "explicit-false" }
-generateAudio 取值：explicit-false（家族支持该参数，v1 恒发 false 保持无声承诺）/ omit（家族不支持该参数，字段不携带）。已登记家族的默认预设见 src/adapters/seedance/overview.md「模型家族」。`
+缺少：${missing}。
+generateAudio 取值：explicit-false（家族支持该参数，v1 恒发 false 保持无声承诺）/ omit（家族不支持该参数，字段不携带）。家族能力参考值见 src/adapters/seedance/overview.md「模型家族」表（人面参考，以官方文档/方舟控制台为准）。`
 }
 
 /**
- * 解析家族能力：契约预设打底 + 用户声明覆盖。
- * 已登记家族：caps 可整体省略或部分覆盖；未登记家族：caps 四项必须齐备，缺项返回引导错误。
+ * 解析用户声明的家族能力（无内置预设）：四字段齐备 + 值合法才放行；缺项/非法显式报错。
+ * @param label 显示标签：.dvd.config.json 的 family 声明，或 Model ID
  */
 export function resolveCapabilities(
-  familyLabel: string | null,
-  override?: CapsOverride,
+  label: string,
+  caps?: CapsOverride,
 ): { caps: FamilyCaps | null; error: string | null } {
-  const preset = familyLabel ? presetFor(familyLabel) : null
-  if (preset) {
-    if (override?.durationRange && override.durationRange[0] > override.durationRange[1]) {
-      return { caps: null, error: 'caps.durationRange 无效：需 [最短秒, 最长秒] 且最短 ≤ 最长。' }
-    }
-    if (override?.generateAudio !== undefined && !AUDIO_POLICIES.includes(override.generateAudio)) {
-      return { caps: null, error: `caps.generateAudio 无效：只接受 ${AUDIO_POLICIES.join(' / ')}。` }
-    }
-    return {
-      caps: {
-        family: familyLabel!,
-        source: override ? 'configured' : 'preset',
-        durationRange: override?.durationRange ?? preset.durationRange,
-        maxReferenceImages: override?.maxReferenceImages ?? preset.maxReferenceImages,
-        maxFirstLastFrame: override?.maxFirstLastFrame ?? preset.maxFirstLastFrame,
-        generateAudio: override?.generateAudio ?? preset.generateAudio,
-      },
-      error: null,
-    }
-  }
-  if (!override) return { caps: null, error: unknownFamilyError(familyLabel) }
-  const dr = override.durationRange
+  const dr = caps?.durationRange
   if (!Array.isArray(dr) || dr.length !== 2 || typeof dr[0] !== 'number' || typeof dr[1] !== 'number') {
-    return { caps: null, error: unknownFamilyError(familyLabel) + '\n当前声明缺 durationRange（[最短秒, 最长秒]）。' }
+    return { caps: null, error: capsRequiredError(label, 'durationRange（[最短秒, 最长秒]）') }
   }
   if (dr[0] > dr[1]) return { caps: null, error: `caps.durationRange 无效：最短 ${dr[0]} > 最长 ${dr[1]}。` }
-  if (typeof override.maxReferenceImages !== 'number' || override.maxReferenceImages < 0) {
-    return { caps: null, error: unknownFamilyError(familyLabel) + '\n当前声明缺 maxReferenceImages（参考图上限张数，不支持填 0）。' }
+  if (typeof caps.maxReferenceImages !== 'number' || caps.maxReferenceImages < 0) {
+    return { caps: null, error: capsRequiredError(label, 'maxReferenceImages（参考图上限张数，不支持填 0）') }
   }
-  if (typeof override.maxFirstLastFrame !== 'number' || override.maxFirstLastFrame < 0) {
-    return { caps: null, error: unknownFamilyError(familyLabel) + '\n当前声明缺 maxFirstLastFrame（首尾帧上限张数）。' }
+  if (typeof caps.maxFirstLastFrame !== 'number' || caps.maxFirstLastFrame < 0) {
+    return { caps: null, error: capsRequiredError(label, 'maxFirstLastFrame（首尾帧上限张数）') }
   }
-  if (!AUDIO_POLICIES.includes(override.generateAudio as AudioPolicy)) {
-    return { caps: null, error: unknownFamilyError(familyLabel) + `\n当前声明缺/误 generateAudio（取值 ${AUDIO_POLICIES.join(' / ')}）。` }
+  if (!AUDIO_POLICIES.includes(caps.generateAudio as AudioPolicy)) {
+    return { caps: null, error: capsRequiredError(label, `generateAudio（取值 ${AUDIO_POLICIES.join(' / ')}）`) }
   }
   return {
     caps: {
-      family: familyLabel ?? '（用户声明）',
-      source: 'configured',
+      family: label,
       durationRange: [dr[0], dr[1]],
-      maxReferenceImages: override.maxReferenceImages,
-      maxFirstLastFrame: override.maxFirstLastFrame,
-      generateAudio: override.generateAudio as AudioPolicy,
+      maxReferenceImages: caps.maxReferenceImages,
+      maxFirstLastFrame: caps.maxFirstLastFrame,
+      generateAudio: caps.generateAudio as AudioPolicy,
     },
     error: null,
   }
@@ -389,7 +329,7 @@ export interface CostEstimate {
 }
 
 export function estimate(model: string, duration: number, resolution: string, familyLabel?: string | null): CostEstimate {
-  const family = familyLabel ?? familyOf(model) ?? 'unregistered'
+  const family = familyLabel ?? model
   return {
     model, family, duration, resolution,
     estimatedCost: null, // 未校准：方舟无积分 API，刊例价表待补录 api.json 后给出元级预估

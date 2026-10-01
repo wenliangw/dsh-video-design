@@ -16,9 +16,9 @@ export interface AdapterConfigEntry {
   apiKey?: string
   /** 模型（必填，无内置默认——模型版本更迭快，插件不为模型改版发版） */
   model?: string
-  /** 家族名显式声明（Endpoint ID / 新家族复用某已登记家族预设时使用） */
+  /** 家族显示标签（可选，仅用于预览/报错消息）；不承载能力复用——能力全部由 caps 声明，契约无内置预设 */
   family?: string
-  /** 家族能力声明（已登记家族可部分覆盖预设；未登记家族四项必须齐备）；generateAudio: explicit-false=家族支持参数（v1 恒发 false）/ omit=无此参数 */
+  /** 家族能力声明（必填四字段）：durationRange / maxReferenceImages / maxFirstLastFrame / generateAudio；插件契约零内置、不代编 */
   caps?: CapsConfig
 }
 
@@ -56,9 +56,9 @@ export interface ResolvedAdapter {
   apiKey?: string
   baseUrl?: string
   model?: string
-  /** 家族名显式声明（覆盖前缀解析；Endpoint ID / 新家族复用预设） */
+  /** 家族显示标签（可选，仅用于预览/报错） */
   family?: string
-  /** 家族能力声明（覆盖契约预设；未登记家族必填） */
+  /** 家族能力声明（必填四字段；契约无内置预设） */
   caps?: CapsConfig
 }
 
