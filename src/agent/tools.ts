@@ -18,7 +18,8 @@ import {
   estimate, buildStandardSentence, toRequest, validateReferenceInput,
   createGeneration, getTask, extraDoneStatuses, extraFailedStatuses,
   readShotRecord, writeShotRecord, extractVideoUrl,
-  type ShotJSON, type ShotRecord,
+  familyOf, resolveCapabilities,
+  type ShotJSON, type ShotRecord, type CapsOverride,
 } from '../adapters/seedance/seedance.js'
 import {
   resolveAdapter, describeAdapters, SUPPORTED_ADAPTERS, DEFAULT_ADAPTER,
@@ -382,6 +383,14 @@ export function registerTools(ctx: Context, config: Config): void {
         return '未配置模型，拒绝继续。模型版本更迭快、插件不内置默认——请在 .dvd.config.json 的 adapters[].model 填你方舟账号开通的版本化 Model ID（当前在售参考 src/adapters/seedance/overview.md「当前在售版本」表，最终以方舟控制台 model-list 为准），或设置环境变量 SEEDANCE_MODEL。'
       }
       const apiBase = resolved.baseUrl
+
+      // ---- 家族能力解析（配置化）：用户 .dvd.config.json 的 family / caps 声明 > 契约预设 ----
+      // 未登记家族（新家族 / Endpoint ID / 拼写错误）不编造参数——引导用户配置后声明即用，无需插件发版。
+      const familyLabel: string | null = resolved.family?.trim() || familyOf(model)
+      const capsRes = resolveCapabilities(familyLabel, resolved.caps as CapsOverride | undefined)
+      if (!capsRes.caps) return capsRes.error ?? '家族能力解析失败。'
+      const caps = capsRes.caps
+
       const isDry = args.dry_run === true || !apiKey
 
       // ---- reference_urls 校验：数组 + 公网 HTTPS + 张数上限（按模型家族，读 api.json 契约） ----
@@ -392,7 +401,7 @@ export function registerTools(ctx: Context, config: Config): void {
         const bad = parsed.find(u => typeof u !== 'string' || !/^https:\/\//.test(u))
         if (bad !== undefined) return `reference_urls 含非法项（须公网 HTTPS URL）：${JSON.stringify(bad)}`
         referenceUrls = parsed
-        const refErr = validateReferenceInput(model, referenceUrls.length, config.referenceMode)
+        const refErr = validateReferenceInput(model, referenceUrls.length, config.referenceMode, caps)
         if (refErr) return refErr
       } catch {
         return 'reference_urls 不是合法 JSON 数组。'
@@ -405,7 +414,7 @@ export function registerTools(ctx: Context, config: Config): void {
       const axisFormat = typeof shot.shot.axes?.format === 'string' ? shot.shot.axes.format.trim() : ''
       const aspectRatio = axisFormat || wsCfg.defaultAspectRatio || config.defaultAspectRatio
       // 计价方向：方舟按人民币计费、无积分/余额 API——v1 计价为未校准占位，estimate 返回 null 时闸门放行并明示
-      const cost = estimate(model, duration, quality)
+      const cost = estimate(model, duration, quality, caps.family)
 
       const plan = toRequest(shot, {
         model,
@@ -414,6 +423,7 @@ export function registerTools(ctx: Context, config: Config): void {
         aspectRatio,
         referenceMode: config.referenceMode,
         referenceUrls,
+        caps,
       })
 
       const recordFile = path.join(vctx.storyRoot!, episode, 'shots', `${shot.shot.index}.json`)
@@ -422,7 +432,7 @@ export function registerTools(ctx: Context, config: Config): void {
         '## 🎬 镜头编译预览',
         `**标准层（可倒解析回 11 域）**：${buildStandardSentence(shot)}`,
         `**厂商层（${adapterName} prompt 全文）**：${plan.vendorPrompt}`,
-        `**参数**：adapter=${adapterName}｜family=${plan.family}｜model=${plan.model}｜duration=${plan.duration}s｜resolution=${plan.resolution}｜ratio=${plan.ratio}${plan.body.generate_audio === false ? '｜generate_audio=false（v1 无声承诺）' : ''}`,
+        `**参数**：adapter=${adapterName}｜family=${plan.family}（${caps.source === 'preset' ? '契约预设' : '用户配置'}）｜model=${plan.model}｜duration=${plan.duration}s｜resolution=${plan.resolution}｜ratio=${plan.ratio}${plan.body.generate_audio === false ? '｜generate_audio=false（v1 无声承诺）' : ''}`,
         referenceUrls.length ? `**参考图**：${referenceUrls.length} 张，role=${plan.referenceRoles.join('/')}` : '**参考图**：无（纯文生视频）',
         `**成本预估**：${cost.pricingNote}`,
       ]

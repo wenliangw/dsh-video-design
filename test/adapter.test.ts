@@ -4,6 +4,7 @@ import {
   buildStandardSentence, buildVendorPrompt, clampPrompt,
   validateReferenceInput, toRequest, estimate, extractVideoUrl,
   extraDoneStatuses, extraFailedStatuses, isTerminalStatus,
+  resolveCapabilities, type FamilyCaps,
   type ShotJSON,
 } from '../src/adapters/seedance/seedance.js'
 
@@ -28,8 +29,9 @@ describe('模型家族解析（api.json 契约驱动）', () => {
     expect(familyOf('doubao-seedance-1-0-pro-fast-xxxx')).toBe('1.0profast')
     expect(familyOf('doubao-seedance-1-0-pro-250528')).toBe('1.0pro')
   })
-  it('未知前缀回退 generic 家族', () => {
-    expect(familyOf('other-model')).toBe('generic')
+  it('未登记前缀返回 null（不回退编造家族）', () => {
+    expect(familyOf('other-model')).toBeNull()
+    expect(familyOf('ep-20260101-abcd')).toBeNull()
   })
   it('日期版本号 ID 按前缀解析家族（新版本 ID 不需插件发版，同规则）', () => {
     expect(familyOf('doubao-seedance-2-5-260628')).toBe('2.5')
@@ -37,11 +39,17 @@ describe('模型家族解析（api.json 契约驱动）', () => {
     expect(familyOf('doubao-seedance-2-0-fast-260128')).toBe('2.0fast')
     expect(familyOf('doubao-seedance-2-0-mini-260615')).toBe('2.0mini')
   })
-  it('duration 范围按家族取值', () => {
+  it('duration 范围按家族取值；未登记家族返回 null', () => {
     expect(durationRangeOf('2.5')).toEqual([4, 30])
     expect(durationRangeOf('2.0fast')).toEqual([4, 15])
     expect(durationRangeOf('1.0pro')).toEqual([2, 12])
-    expect(durationRangeOf('generic')).toEqual([2, 30])
+    expect(durationRangeOf('generic')).toBeNull()
+  })
+  it('前缀解析不依赖表内插入顺序（最长前缀优先）', () => {
+    // 契约表里 fast/mini 在基座前；但即便顺序颠倒，算法也必须命中更长的前缀
+    expect(familyOf('doubao-seedance-2-0-fast-260128')).toBe('2.0fast')
+    expect(familyOf('doubao-seedance-2-0-mini-260615')).toBe('2.0mini')
+    expect(familyOf('doubao-seedance-2-0-260128')).toBe('2.0')
   })
   it('base URL 契约默认指向方舟', () => {
     expect(defaultBaseUrl()).toBe('https://ark.cn-beijing.volces.com')
@@ -69,37 +77,106 @@ describe('两层提示词转译', () => {
   })
 })
 
-describe('参考图校验（家族上限）', () => {
+describe('家族能力解析（配置化）', () => {
+  const capsOf = (m: string): FamilyCaps => resolveCapabilities(familyOf(m), undefined).caps!
+
+  it('已登记家族走契约预设', () => {
+    const r = resolveCapabilities('2.5')
+    expect(r.error).toBeNull()
+    expect(r.caps!.source).toBe('preset')
+    expect(r.caps!.durationRange).toEqual([4, 30])
+    expect(r.caps!.maxReferenceImages).toBe(30)
+    expect(r.caps!.maxFirstLastFrame).toBe(2)
+    expect(r.caps!.generateAudio).toBe('explicit-false')
+    const r1 = resolveCapabilities('1.0pro')
+    expect(r1.caps!.durationRange).toEqual([2, 12])
+    expect(r1.caps!.maxReferenceImages).toBe(0)
+    expect(r1.caps!.generateAudio).toBe('omit')
+  })
+
+  it('已登记家族可部分覆盖能力（未覆盖字段沿用预设）', () => {
+    const r = resolveCapabilities('2.0', { maxReferenceImages: 15 })
+    expect(r.error).toBeNull()
+    expect(r.caps!.source).toBe('configured')
+    expect(r.caps!.maxReferenceImages).toBe(15)
+    expect(r.caps!.durationRange).toEqual([4, 15])
+    expect(r.caps!.generateAudio).toBe('explicit-false')
+  })
+
+  it('未登记家族：无声明 → 拒绝并给配置模板', () => {
+    const r = resolveCapabilities('doubao-seedance-3-0-xxx', undefined)
+    expect(r.caps).toBeNull()
+    expect(r.error).toContain('能力声明')
+    const rn = resolveCapabilities(null, undefined)
+    expect(rn.caps).toBeNull()
+    expect(rn.error).not.toBeNull()
+  })
+
+  it('未登记家族：声明缺项 → 报缺项', () => {
+    const r = resolveCapabilities('doubao-seedance-3-0-xxx', { durationRange: [4, 15] })
+    expect(r.caps).toBeNull()
+    expect(r.error).toContain('maxReferenceImages')
+  })
+
+  it('未登记家族：四项齐备 → configured 生效', () => {
+    const r = resolveCapabilities('doubao-seedance-3-0-xxx', {
+      durationRange: [4, 20], maxReferenceImages: 5, maxFirstLastFrame: 2, generateAudio: 'omit',
+    })
+    expect(r.error).toBeNull()
+    expect(r.caps!.family).toBe('doubao-seedance-3-0-xxx')
+    expect(r.caps!.source).toBe('configured')
+    expect(r.caps!.durationRange).toEqual([4, 20])
+    expect(r.caps!.maxReferenceImages).toBe(5)
+    expect(r.caps!.generateAudio).toBe('omit')
+  })
+
+  it('非法配置显式报错', () => {
+    expect(resolveCapabilities('2.0', { durationRange: [30, 4] }).error).toContain('durationRange')
+    expect(resolveCapabilities('2.0', { generateAudio: 'audio-on' as never }).error).toContain('generateAudio')
+    const rx = resolveCapabilities('x', { durationRange: [4, 15], maxReferenceImages: 9, maxFirstLastFrame: 2, generateAudio: 'bad' as never })
+    expect(rx.error).toContain('generateAudio')
+  })
+})
+
+describe('参考图校验（家族上限，能力来自配置解析）', () => {
+  const capsOf = (m: string): FamilyCaps => resolveCapabilities(familyOf(m), undefined).caps!
   const seedance25 = 'doubao-seedance-2-5-1'
   const seedance20fast = 'doubao-seedance-2-0-fast-1'
   const seedance10fast = 'doubao-seedance-1-0-pro-fast-1'
   const seedance10pro = 'doubao-seedance-1-0-pro-1'
   it('无图直通', () => {
-    expect(validateReferenceInput(seedance10fast, 0, false)).toBeNull()
+    expect(validateReferenceInput(seedance10fast, 0, false, capsOf(seedance10fast))).toBeNull()
   })
   it('1.0 pro fast 仅首帧 1 张', () => {
-    expect(validateReferenceInput(seedance10fast, 1, false)).toBeNull()
-    expect(validateReferenceInput(seedance10fast, 2, false)).toContain('最多支持 1 张')
+    expect(validateReferenceInput(seedance10fast, 1, false, capsOf(seedance10fast))).toBeNull()
+    expect(validateReferenceInput(seedance10fast, 2, false, capsOf(seedance10fast))).toContain('最多支持 1 张')
   })
   it('1.0 系列不支持参考图（reference_mode）', () => {
-    expect(validateReferenceInput(seedance10pro, 2, true)).toContain('不支持参考图')
-    expect(validateReferenceInput(seedance10pro, 3, false)).toContain('不支持参考图生视频')
+    expect(validateReferenceInput(seedance10pro, 2, true, capsOf(seedance10pro))).toContain('不支持参考图')
+    expect(validateReferenceInput(seedance10pro, 3, false, capsOf(seedance10pro))).toContain('不支持参考图生视频')
   })
   it('2.0 系列上限 9 张、2.5 上限 30 张', () => {
-    expect(validateReferenceInput(seedance20fast, 9, true)).toBeNull()
-    expect(validateReferenceInput(seedance20fast, 10, true)).toContain('上限 9 张')
-    expect(validateReferenceInput(seedance25, 30, true)).toBeNull()
-    expect(validateReferenceInput(seedance25, 31, true)).toContain('上限 30 张')
+    expect(validateReferenceInput(seedance20fast, 9, true, capsOf(seedance20fast))).toBeNull()
+    expect(validateReferenceInput(seedance20fast, 10, true, capsOf(seedance20fast))).toContain('上限 9 张')
+    expect(validateReferenceInput(seedance25, 30, true, capsOf(seedance25))).toBeNull()
+    expect(validateReferenceInput(seedance25, 31, true, capsOf(seedance25))).toContain('上限 30 张')
   })
   it('1.0 pro 支持首尾帧 2 张', () => {
-    expect(validateReferenceInput(seedance10pro, 2, false)).toBeNull()
+    expect(validateReferenceInput(seedance10pro, 2, false, capsOf(seedance10pro))).toBeNull()
+  })
+  it('用户 caps 覆盖：2.0fast 参考图上限改为 3', () => {
+    const custom = resolveCapabilities('2.0fast', { maxReferenceImages: 3 }).caps!
+    expect(validateReferenceInput(seedance20fast, 3, true, custom)).toBeNull()
+    expect(validateReferenceInput(seedance20fast, 4, true, custom)).toContain('上限 3 张')
   })
 })
 
 describe('请求体映射（火山方舟形态）', () => {
+  const capsOf = (m: string): FamilyCaps => resolveCapabilities(familyOf(m), undefined).caps!
   it('content 首条为 text，时长按家族 clamp，watermark=false', () => {
     const plan = toRequest(baseShot(), {
       model: 'doubao-seedance-2-0-1', duration: 3, resolution: '720p', aspectRatio: '16:9', referenceMode: false, referenceUrls: [],
+      caps: capsOf('doubao-seedance-2-0-1'),
     })
     expect(plan.family).toBe('2.0')
     expect(plan.duration).toBe(4) // 3s 低于 2.0 家族下限
@@ -112,6 +189,7 @@ describe('请求体映射（火山方舟形态）', () => {
   it('1.0 系列不携带 generate_audio；duration 上限 clamp 12', () => {
     const plan = toRequest(baseShot(), {
       model: 'doubao-seedance-1-0-pro-250528', duration: 30, resolution: '1080p', aspectRatio: '16:9', referenceMode: false, referenceUrls: [],
+      caps: capsOf('doubao-seedance-1-0-pro-250528'),
     })
     expect(plan.family).toBe('1.0pro')
     expect(plan.duration).toBe(12)
@@ -121,6 +199,7 @@ describe('请求体映射（火山方舟形态）', () => {
     const plan = toRequest(baseShot(), {
       model: 'doubao-seedance-2-0-1', duration: 5, resolution: '720p', aspectRatio: '16:9', referenceMode: false,
       referenceUrls: ['https://a.example/1.png', 'https://a.example/2.png'],
+      caps: capsOf('doubao-seedance-2-0-1'),
     })
     const imgs = plan.body.content.slice(1)
     expect(imgs.map(i => i.image_url!.role)).toEqual(['first_frame', 'last_frame'])
@@ -129,6 +208,7 @@ describe('请求体映射（火山方舟形态）', () => {
     const plan = toRequest(baseShot(), {
       model: 'doubao-seedance-2-5-1', duration: 8, resolution: '720p', aspectRatio: '16:9', referenceMode: true,
       referenceUrls: ['https://a.example/1.png', 'https://a.example/2.png'],
+      caps: capsOf('doubao-seedance-2-5-1'),
     })
     expect(plan.referenceRoles).toEqual(['reference_image', 'reference_image'])
   })
@@ -136,6 +216,7 @@ describe('请求体映射（火山方舟形态）', () => {
     const plan = toRequest(baseShot(), {
       model: 'doubao-seedance-2-5-1', duration: 8, resolution: '720p', aspectRatio: '16:9', referenceMode: false,
       referenceUrls: ['https://a.example/1.png', 'https://a.example/2.png', 'https://a.example/3.png'],
+      caps: capsOf('doubao-seedance-2-5-1'),
     })
     expect(plan.referenceRoles).toEqual(['reference_image', 'reference_image', 'reference_image'])
   })

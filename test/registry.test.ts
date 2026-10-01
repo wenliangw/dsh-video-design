@@ -74,6 +74,14 @@ describe('适配器配置 .dvd.config.json', () => {
     delete process.env.SEEDANCE_MODEL
   })
 
+  it('family/caps 能力声明随条目解析（Endpoint ID / 新家族配置化）', () => {
+    writeCfg(JSON.stringify({ adapters: [{ name: 'seedance', model: 'ep-20260101-abcd', family: '2.5', caps: { durationRange: [4, 30], maxReferenceImages: 30, maxFirstLastFrame: 2, generateAudio: 'explicit-false' } }] }))
+    const r = resolveAdapter(ws, 'seedance')
+    expect(r.family).toBe('2.5')
+    expect(r.caps?.maxReferenceImages).toBe(30)
+    expect(r.caps?.generateAudio).toBe('explicit-false')
+  })
+
   it('损坏 JSON 不抛错，按空集合处理', () => {
     writeCfg('{ bad json')
     expect(loadAdaptersConfig(ws)).toEqual([])

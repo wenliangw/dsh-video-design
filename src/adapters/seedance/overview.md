@@ -36,6 +36,15 @@
 | Seedance 1.0 pro | `doubao-seedance-1-0-pro-*` | 首帧/首尾帧/文生；`frames` 25+4n；`seed`/`camera_fixed`/`service_tier` | `[2,12]` | 无声 |
 | Seedance 1.0 pro fast | `doubao-seedance-1-0-pro-fast-*` | 首帧/文生（无首尾帧）；frames/seed/camera_fixed/service_tier | `[2,12]` | 无声 |
 
+### 家族能力配置化（用户声明即用，不随插件发版）
+
+上表同时是**内置预设**：已登记家族的时长范围、参考图/首尾帧上限、generate_audio 策略由契约默认生效，用户无需填写。但厂商更新不会停在预设里——用户在 `.dvd.config.json` 的 adapter 条目可做两层声明：
+
+- `"family": "<家族名>"` — 显式声明家族。Endpoint ID（`ep-*`）等前缀里没有家族信息的 ID，用这一条直接复用某已登记家族的预设。
+- `"caps": { "durationRange": [4, 15], "maxReferenceImages": 9, "maxFirstLastFrame": 2, "generateAudio": "explicit-false" }` — 家族能力声明：已登记家族可选填（部分覆盖预设）；**未登记家族（新家族）四项必须齐备**——插件不为未知家族编造参数。
+
+`generateAudio` 取值：`explicit-false`（家族支持该参数——v1 恒发 false 保持无声承诺）/ `omit`（家族无该参数，字段不携带）。未登记家族缺声明时 `generate_shot` 拒绝并给出可复制的配置模板。
+
 ### 当前在售版本（2026-10-02 交叉核对，以方舟控制台 model-list 为准）
 
 官方 model-list 页需登录，本表由两个方舟官方兼容源交叉核对（[亿速云 Seedance 2.x 文档](http://www.yisu.com/help/ai_docs/video-api/api-capabilities/seedance_2x.html) 的上游模型 ID 表 + [apifox 官方格式接口页](https://gpt-best.apifox.cn/api-510675713)）。**插件不内置默认模型，用户必须显式配置 model**（`.dvd.config.json` 的 `adapters[].model`，或 `SEEDANCE_MODEL` 环境变量）——任意方舟版本化 ID 都按前缀解析家族直接可用，不需插件发版；本表只作「当前在售是什么」的选择参考。本表仅存于本文档（人面参考），**不进 api.json 机器面**——机器面 `models` 段只有前缀解析表（行为事实），本表是会过期的时效资讯：过期只算文档失真（以方舟控制台 model-list 为准），不构成插件被迫发版的理由。选择指引：求快求省选 2-0-fast（分辨率上限 720p）；要 1080p 选 2.0 基座；4k/长时长/全模态参考选 2.5。

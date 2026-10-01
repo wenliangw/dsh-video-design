@@ -29,8 +29,7 @@
       "doubao-seedance-2-0": "2.0",
       "doubao-seedance-1-0-pro-fast": "1.0profast",
       "doubao-seedance-1-0-pro": "1.0pro"
-    },
-    "fallbackFamily": "generic"
+    }
   },
   "request": {
     "promptMaxCharsZh": 500,
@@ -41,8 +40,7 @@
       "2.0fast": [4, 15],
       "2.0mini": [4, 15],
       "1.0pro": [2, 12],
-      "1.0profast": [2, 12],
-      "generic": [2, 30]
+      "1.0profast": [2, 12]
     },
     "resolutionEnum": ["480p", "720p", "1080p", "4k"],
     "ratioEnum": ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"],
@@ -57,8 +55,7 @@
       "2.0fast": { "maxReference": 9, "maxFirstLastFrame": 2 },
       "2.0mini": { "maxReference": 9, "maxFirstLastFrame": 2 },
       "1.0pro": { "maxReference": 0, "maxFirstLastFrame": 2 },
-      "1.0profast": { "maxReference": 0, "maxFirstLastFrame": 1 },
-      "generic": { "maxReference": 0, "maxFirstLastFrame": 0 }
+      "1.0profast": { "maxReference": 0, "maxFirstLastFrame": 1 }
     },
     "imageConstraints": {
       "formats": ["jpeg", "png", "webp", "bmp", "tiff", "gif", "heic", "heif"],

@@ -23,6 +23,7 @@
 ## 2. 参数红线（以 api.json 契约为准，此处是使用摘要）
 
 - **model 无内置默认**：用户必须显式配置——`.dvd.config.json` 的 `adapters[].model`（或环境变量 `SEEDANCE_MODEL`）；未设置时 generate_shot 拒绝并指引，不得代编模型 ID。任何版本化 ID 都按前缀解析家族直接可用（新版本不必等插件发版，新家族才需要契约更新），当前在售版本见 overview「当前在售版本」表。
+- **家族能力配置化**：已登记家族（api.json familyByIdPrefix 命中）走契约预设（durationRange / 参考图上限 / generateAudio 策略）；未登记家族（新家族 / Endpoint ID / 拼写错误）**不代猜、不编造**——引导用户在 `.dvd.config.json` 该 adapter 条目补 `family`（复用已登记家族预设）或 `caps`（durationRange / maxReferenceImages / maxFirstLastFrame / generateAudio 四项全声明），声明即用、无需发版。generateAudio 取值 `explicit-false`（家族支持参数→恒发 false 守无声承诺）/ `omit`（不支持→字段不携带）。
 - **duration 按家族**：2.5 [4,30]s / 2.0 系列 [4,15]s / 1.0 系列 [2,12]s（客户端按家族 clamp；官方 `-1`=模型自选，v1 恒显式传值）。
 - **resolution**：480p/720p/1080p/4k；v1 客户端只发 480/720/1080 三档，各模型支持上限以方舟 model-list 为准——越界靠服务端校验错误透明呈现，客户端不预判。
 - **ratio**：16:9/4:3/1:1/3:4/9:16/21:9/adaptive。
