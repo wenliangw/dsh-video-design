@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   defaultBaseUrl,
-  buildStandardSentence, buildVendorPrompt, clampPrompt,
+  buildStandardSentence, buildVendorPrompt, clampPrompt, clampPromptReport,
+  type PromptOverflow,
   validateReferenceInput, toRequest, estimate, extractVideoUrl,
   extraDoneStatuses, extraFailedStatuses, isTerminalStatus,
   resolveCapabilities,
@@ -215,5 +216,23 @@ describe('计价与状态', () => {
     expect(extractVideoUrl({ content: null, output: { video_url: 'https://v/2.mp4' } })).toBe('https://v/2.mp4')
     expect(extractVideoUrl({ video_url: 'https://v/3.mp4' })).toBe('https://v/3.mp4')
     expect(extractVideoUrl(null)).toBeNull()
+  })
+})
+
+
+describe('clampPromptReport 溢出报告（不静默牺牲）', () => {
+  it('未超限 → overflow=null，prompt 原样', () => {
+    const { prompt, overflow } = clampPromptReport('短句甲；短句乙；短句丙')
+    expect(prompt).toBe('短句甲；短句乙；短句丙')
+    expect(overflow).toBeNull()
+  })
+
+  it('超限 → 返回裁剪后 prompt + 溢出明细（含被裁片段）', () => {
+    const long = '甲；'.repeat(300) // 600 字
+    const { prompt, overflow } = clampPromptReport(long)
+    expect(prompt.length).toBeLessThanOrEqual(overflow!.limit + 1)
+    expect(overflow!.originalChars).toBe(600)
+    expect(overflow!.droppedChars).toBeGreaterThan(0)
+    expect(overflow!.droppedTail.length).toBeGreaterThan(0)
   })
 })

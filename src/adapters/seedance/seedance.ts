@@ -216,6 +216,33 @@ export function clampPrompt(text: string, max = contract().request.promptMaxChar
   return cut.slice(0, lastSep > max * 0.6 ? lastSep : cut.length) + '；'
 }
 
+export interface PromptOverflow {
+  /** 契约建议上限（官方建议中文 ≤500 字） */
+  limit: number
+  /** 裁剪前原文长度 */
+  originalChars: number
+  droppedChars: number
+  /** 被裁掉的尾部片段（截到约 80 字，供预览明示） */
+  droppedTail: string
+}
+
+/** 兜底裁剪 + 溢出报告：不静默牺牲——call 方（dry_run 预览）必须把裁了什么明示给用户 */
+export function clampPromptReport(text: string): { prompt: string; overflow: PromptOverflow | null } {
+  const limit = contract().request.promptMaxCharsZh
+  if (text.length <= limit) return { prompt: text, overflow: null }
+  const prompt = clampPrompt(text, limit)
+  const droppedTail = text.slice(prompt.length - 1)
+  return {
+    prompt,
+    overflow: {
+      limit,
+      originalChars: text.length,
+      droppedChars: text.length - (prompt.length - 1),
+      droppedTail: droppedTail.length > 80 ? droppedTail.slice(0, 80) + '…' : droppedTail,
+    },
+  }
+}
+
 // ---------- 请求体（火山方舟形态） ----------
 
 export type ContentRole = 'first_frame' | 'last_frame' | 'reference_image'
@@ -239,6 +266,8 @@ export interface SeedanceBodyRequest {
 export interface SeedancePlan {
   /** 厂商 prompt 全文（content 首条 text） */
   vendorPrompt: string
+  /** 超限裁剪明细（null = 未超限） */
+  overflow: PromptOverflow | null
   model: string
   family: string
   duration: number
@@ -297,8 +326,13 @@ export function toRequest(
   const [dMin, dMax] = caps.durationRange
   const duration = Math.min(dMax, Math.max(dMin, Math.round(opts.duration)))
   const content: SeedanceContentItem[] = []
-  let vendorPrompt = clampPrompt(buildVendorPrompt(shot, { photographic: urls.length > 0 }))
-  if (shot.prompt_text) vendorPrompt = clampPrompt(vendorPrompt + '；' + shot.prompt_text.trim())
+  const clamped = clampPromptReport(buildVendorPrompt(shot, { photographic: urls.length > 0 }))
+  let vendorPrompt = clamped.prompt
+  if (shot.prompt_text) {
+    const clamped2 = clampPromptReport(vendorPrompt + '；' + shot.prompt_text.trim())
+    vendorPrompt = clamped2.prompt
+    clamped.overflow = clamped2.overflow
+  }
   content.push({ type: 'text', text: vendorPrompt })
   const roles = assignRoles(urls.length, opts.referenceMode)
   urls.forEach((u, i) => content.push({ type: 'image_url', image_url: { url: u, role: roles[i] } }))
@@ -315,6 +349,8 @@ export function toRequest(
 
   return {
     vendorPrompt,
+    /** 超官方建议字数时的溢出明细（null = 未超限）；dry_run 预览据此明示被裁内容 */
+    overflow: clamped.overflow,
     model: opts.model,
     family: caps.family,
     duration,
