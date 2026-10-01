@@ -77,7 +77,8 @@ export function resolveAdapter(workspaceRoot: string, name: string): ResolvedAda
     name,
     apiKey: envKey || envApiKey(name),
     baseUrl: entry?.baseUrl?.trim() || undefined,
-    model: entry?.model?.trim() || undefined,
+    // 模型无内置默认：文件 model > <NAME大写>_MODEL 环境变量 > undefined（调用方必须拒绝并指引）
+    model: entry?.model?.trim() || envModel(name),
   }
   return resolved
 }
@@ -87,6 +88,11 @@ function envApiKey(name: string): string | undefined {
   return process.env[`${macro}_API_KEY`]?.trim() || undefined
 }
 
+function envModel(name: string): string | undefined {
+  const macro = name.toUpperCase().replace(/[^A-Z0-9]/g, '_')
+  return process.env[`${macro}_MODEL`]?.trim() || undefined
+}
+
 /** 按 name 列出配置概览（供人类快速核对） */
 export function describeAdapters(workspaceRoot: string): string {
   const entries = loadAdaptersConfig(workspaceRoot)
@@ -94,6 +100,7 @@ export function describeAdapters(workspaceRoot: string): string {
   return entries.map(e => {
     const supported = (SUPPORTED_ADAPTERS as readonly string[]).includes(e.name)
     const keyHint = e.apiKey?.trim() ? 'file' : (envApiKey(e.name) ? 'env' : '✗ 未配置')
-    return `- ${e.name}${supported ? '' : '（客户端未实现）'} key=${keyHint} model=${e.model ?? '插件默认'}`
+    const modelHint = e.model?.trim() || envModel(e.name) || '✗ 未设置（无内置默认）'
+    return `- ${e.name}${supported ? '' : '（客户端未实现）'} key=${keyHint} model=${modelHint}`
   }).join('\n')
 }

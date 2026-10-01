@@ -19,7 +19,7 @@ api.json 只装「是什么」（What），不装「怎么做」（How）——�
 ## API 形态（方舟，2026-09-27 核对）
 
 - 提交：`POST /api/v3/contents/generations/tasks`（baseUrl 覆盖链：.dvd.config.json > `SEEDANCE_BASE_URL` 环境变量 > api.json 默认 `https://ark.cn-beijing.volces.com`），Bearer Ark API Key。响应仅含任务 `id`（无状态字段，7 天有效）——归一化 `{task_id, status:'queued'}`。
-- 请求体：`model`（版本化 ID，当前在售默认 `doubao-seedance-2-0-fast-260128`，在售版本表见契约 overview「当前在售版本」）、`content[]`（首条 `{type:'text'}` prompt + 可选 `{type:'image_url', image_url:{url, role}}`）、resolution（480p/720p/1080p/4k）、ratio（16:9/4:3/1:1/3:4/9:16/21:9/adaptive）、duration（按家族 clamp：2.5 [4,30] / 2.0 系列 [4,15] / 1.0 系列 [2,12]）、generate_audio（官方默认 true，仅 2.5/2.0 系列）、watermark（默认 false，恒显式）。
+- 请求体：`model`（版本化 ID，**无内置默认**——用户须在 `.dvd.config.json` 显式设置或设 `SEEDANCE_MODEL` 环境变量，未设置时 generate_shot 拒绝；在售版本表见契约 overview「当前在售版本」，仅作选择参考）、`content[]`（首条 `{type:'text'}` prompt + 可选 `{type:'image_url', image_url:{url, role}}`）、resolution（480p/720p/1080p/4k）、ratio（16:9/4:3/1:1/3:4/9:16/21:9/adaptive）、duration（按家族 clamp：2.5 [4,30] / 2.0 系列 [4,15] / 1.0 系列 [2,12]）、generate_audio（官方默认 true，仅 2.5/2.0 系列）、watermark（默认 false，恒显式）。
 - 轮询：`GET /api/v3/contents/generations/tasks/{id}`（路径待官方查询页核实，标记 `getTaskVerified:false`）；状态词 queued/running/succeeded/failed/expired。**无积分/余额查询 API**（getCredits 已整个移除）——余额与用量以方舟控制台为准。
 - 错误：400/401/403/429/5xx HTTP 语义 + 业务码 `InvalidParameter.TaskTypeConstraint` / `InvalidParameter.TaskTypeMismatch`（异步报错）→ 契约表逐条中文化。
 

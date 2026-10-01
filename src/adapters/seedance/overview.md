@@ -38,7 +38,7 @@
 
 ### 当前在售版本（2026-10-02 交叉核对，以方舟控制台 model-list 为准）
 
-官方 model-list 页需登录，本表由两个方舟官方兼容源交叉核对（[亿速云 Seedance 2.x 文档](http://www.yisu.com/help/ai_docs/video-api/api-capabilities/seedance_2x.html) 的上游模型 ID 表 + [apifox 官方格式接口页](https://gpt-best.apifox.cn/api-510675713)）。**插件默认 `doubao-seedance-2-0-fast-260128`**（生成快、720p 上限与 v1 默认画质一致；需要 1080p 换 2.0 基座、需要 4k/长时长/全模态参考换 2.5）。
+官方 model-list 页需登录，本表由两个方舟官方兼容源交叉核对（[亿速云 Seedance 2.x 文档](http://www.yisu.com/help/ai_docs/video-api/api-capabilities/seedance_2x.html) 的上游模型 ID 表 + [apifox 官方格式接口页](https://gpt-best.apifox.cn/api-510675713)）。**插件不内置默认模型，用户必须显式配置 model**（`.dvd.config.json` 的 `adapters[].model`，或 `SEEDANCE_MODEL` 环境变量）——任意方舟版本化 ID 都按前缀解析家族直接可用，不需插件发版；本表只作「当前在售是什么」的选择参考。选择指引：求快求省选 2-0-fast（分辨率上限 720p）；要 1080p 选 2.0 基座；4k/长时长/全模态参考选 2.5。
 
 | 家族 | 当前在售版本 ID | 分辨率上限 |
 |---|---|---|

@@ -375,7 +375,12 @@ export function registerTools(ctx: Context, config: Config): void {
       }
 
       const apiKey = resolved.apiKey
-      const model = resolved.model ?? config.seedanceModel
+      // 模型必须由用户显式设置（.dvd.config.json adapters[].model > SEEDANCE_MODEL 环境变量）。
+      // 插件不内置默认模型：模型版本更迭是厂商节奏，插件不为模型改版发版。
+      const model = resolved.model
+      if (!model) {
+        return '未配置模型，拒绝继续。模型版本更迭快、插件不内置默认——请在 .dvd.config.json 的 adapters[].model 填你方舟账号开通的版本化 Model ID（当前在售参考 src/adapters/seedance/overview.md「当前在售版本」表，最终以方舟控制台 model-list 为准），或设置环境变量 SEEDANCE_MODEL。'
+      }
       const apiBase = resolved.baseUrl
       const isDry = args.dry_run === true || !apiKey
 

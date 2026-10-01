@@ -8,25 +8,24 @@ export const name = 'video'
 
 /** dsh-video 配置项 */
 export interface Config {
-  /** seeddance 默认模型 */
-  seedanceModel: string
   /** 默认出片时长（秒，2–30） */
   defaultDuration: number
   /** 默认画质 */
   defaultQuality: '480p' | '720p' | '1080p'
   /** 默认画幅 */
   defaultAspectRatio: string
-  /** 预算硬闸（积分，0 = 不限，查余额仅提示） */
+  /** 预算硬闸（元；费率未校准时闸门放行并明示，0 = 不限） */
   budgetCredits: number
-  /** 是否默认用 reference_mode 喂 SVG 参考图（2.0/2.5） */
+  /** 是否默认把参考图按 reference_image role 走参考生视频（仅 2.5/2.0 系列支持） */
   referenceMode: boolean
   /** story 投影最多带几条决策 */
   maxRecallDecisions: number
 }
 
-/** Config 的 Schemastery schema（dsh 用于校验 + 填默认值） */
+/** Config 的 Schemastery schema（dsh 用于校验 + 填默认值）。
+ * 注意：没有 seedanceModel——模型版本更迭是厂商节奏，插件不内置默认模型，
+ * 由用户在 .dvd.config.json 的 adapters[].model（或 SEEDANCE_MODEL 环境变量）显式设置。 */
 export const Config: Schema<Config> = Schema.object({
-  seedanceModel: Schema.string().default('seedance-2.0-fast'),
   defaultDuration: Schema.number().default(5),
   defaultQuality: Schema.union(['480p', '720p', '1080p']).default('720p'),
   defaultAspectRatio: Schema.string().default('16:9'),

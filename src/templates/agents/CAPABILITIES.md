@@ -51,7 +51,7 @@ dsh-video-design（dvd）是 dsh 视频创作插件：把自然语言编译成�
 ## 出片契约（重要）
 
 - **两层提示词**：标准层（`[时间窗] 主体 | 镜头[key]值…` 固定子句序，可倒解析）+ 厂商层（单一叙述流字符串）；**三份记录** = shot 标准 JSON / vendor_prompt 全文 / meta（模型·时长·画质·task_id·attempts·状态）。
-- **adapter**：v1 客户端仅 seeddance（火山方舟 Doubao-Seedance；契约文件驱动：`src/adapters/seedance/overview.md` + `api.json`，地址/入参/状态词/错误语义零代码写死）；`.dvd.config.json` 多条目按 `name` 对应，apiKey 留空走环境变量 `<NAME大写>_API_KEY`；未实现的 adapter 诚实报错，不静默。
+- **adapter**：v1 客户端仅 seeddance（火山方舟 Doubao-Seedance；契约文件驱动：`src/adapters/seedance/overview.md` + `api.json`，地址/入参/状态词/错误语义零代码写死）；`.dvd.config.json` 多条目按 `name` 对应，apiKey 留空走环境变量 `<NAME大写>_API_KEY`；**模型无内置默认**——用户必须显式设置 `adapters[].model`（或 `SEEDANCE_MODEL` 环境变量），未设置 generate_shot 拒绝并指引（模型版本更迭快，插件不为模型改版发版）；未实现的 adapter 诚实报错，不静默。
 - **成本**：计价现为**未校准占位**（方舟按人民币刊例价/秒计费，无积分/余额查询 API，余额以方舟控制台为准；刊例价表待补录 api.json pricing 段）；dry_run 免费；预算硬闸（`.dvd/config.json` 的 budgetCredits，口径为元；费率未校准时闸门放行并明示）。无声承诺：2.5/2.0 系列恒显式 `generate_audio=false`（官方默认 true），1.0 系列不携带。
 - **幂等**：同 shot 有 pending 任务拒绝重复提交（官方明示重复 POST 会开第二个任务）。
 

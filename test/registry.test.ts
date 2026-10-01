@@ -25,6 +25,7 @@ describe('适配器配置 .dvd.config.json', () => {
     const r = resolveAdapter(ws, 'seedance')
     expect(r.configured).toBe(false)
     expect(r.apiKey).toBeUndefined()
+    expect(r.model).toBeUndefined()
   })
 
   it('多 adapter 配置，按 name 字段对应', () => {
@@ -61,6 +62,16 @@ describe('适配器配置 .dvd.config.json', () => {
     process.env.SEEDANCE_API_KEY = 'sk-env'
     expect(resolveAdapter(ws, 'seedance').apiKey).toBe('sk-file')
     delete process.env.SEEDANCE_API_KEY
+  })
+
+  it('model 无内置默认：留空走 NAME大写_MODEL 环境变量兜底，文件值优先', () => {
+    writeCfg(JSON.stringify({ adapters: [{ name: 'seedance', model: '' }] }))
+    expect(resolveAdapter(ws, 'seedance').model).toBeUndefined()
+    process.env.SEEDANCE_MODEL = 'doubao-seedance-2-0-fast-260128'
+    expect(resolveAdapter(ws, 'seedance').model).toBe('doubao-seedance-2-0-fast-260128')
+    writeCfg(JSON.stringify({ adapters: [{ name: 'seedance', model: 'doubao-seedance-2-5-260628' }] }))
+    expect(resolveAdapter(ws, 'seedance').model).toBe('doubao-seedance-2-5-260628')
+    delete process.env.SEEDANCE_MODEL
   })
 
   it('损坏 JSON 不抛错，按空集合处理', () => {
