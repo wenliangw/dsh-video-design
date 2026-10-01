@@ -186,8 +186,6 @@ export function buildVendorPrompt(shot: ShotJSON, opts: { photographic?: boolean
   } else {
     text = subject + (windows?.length ? '，' + windows[0].movement : '')
   }
-  // 四要素基础卡先于拍法入 prompt：世界信息（时间/空间/人物位/事件）先立，轴值描述随后
-  if (shot.shot.foundation) text += '；' + renderFoundation(shot.shot.foundation)
   const extras: string[] = []
   const zh = new Map<string, string>([
     ['size', '景别'], ['angle', '机位'], ['movement', '运镜'], ['composition', '构图'],
@@ -195,12 +193,16 @@ export function buildVendorPrompt(shot: ShotJSON, opts: { photographic?: boolean
     ['sound', '声音'], ['performance', '表演'],
   ])
   for (const [key, value] of Object.entries(axes)) {
+    if (key === 'sound') continue // v1 出片无声（generate_audio=false），声音轴只记谱不回喂无声模型（记谱保留在标准层与三份记录）
     const label = zh.get(key)
     if (label && value) extras.push(`${label}${value}`)
   }
   if (extras.length) text += '；' + extras.join('，')
   if (cards?.length) text += '；手法：' + cards.join('、')
   if (shot.constraints?.negatives?.length) text += '；避免：' + shot.constraints.negatives.join('、')
+  // 四要素卡作尾缓冲：subject 已承载叙事+服化、轴值承载拍法词汇，foundation 是结构化的世界层副本——
+  // 500 字超限时按「；」边界从尾砍，先丢冗余副本，拍法词汇与约束活下来（同镜双重描述的职责分离见 _compile 心法）
+  if (shot.shot.foundation) text += '；' + renderFoundation(shot.shot.foundation)
   if (opts.photographic) text += '；真实摄影质感，电影级光影，避免插画卡通风格'
   // 超长兜底：官方建议中文 ≤500 字（过量信息分散、成片缺元素）；按「；」边界整体砍尾部子句
   return clampPrompt(text)

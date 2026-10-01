@@ -241,24 +241,21 @@ export function renderFoundation(f: Foundation): string {
     const d = zh['characters[].position.depth']?.[depth]
     return [s, d].filter(Boolean).join('·')
   }
-  const time = ['时间：' + f.time.period, f.time.lightState, f.time.sequence ? `时序：${f.time.sequence}` : '']
-    .filter(Boolean).join('，')
+  // time.sequence 不渲染：剪辑次序供编辑/确认卡阅读，对生成模型无意义（且挤占 500 字预算）
+  const timeParts = [`时间：${f.time.period}`]
+  if (f.time.lightState) timeParts.push(f.time.lightState)
   const sp = f.space
   const roadZh = zh['space.geometry.roadDirection']?.[sp.geometry.roadDirection] ?? sp.geometry.roadDirection
   const pathZh = zh['space.traffic.screenPath']?.[sp.traffic.screenPath] ?? sp.traffic.screenPath
-  const space = [
-    `空间：${sp.location}`,
-    roadZh,
-    `相机${sp.camera.side}`,
-    sp.camera.axis ? `轴线：${sp.camera.axis}` : '',
-    `动线：${pathZh}`,
-    sp.traffic.note ?? '',
-  ].filter(Boolean).join('，')
+  const spaceParts = [`空间：${sp.location}`, roadZh, `相机${sp.camera.side}`]
+  if (sp.camera.axis) spaceParts.push(sp.camera.axis)
+  spaceParts.push(`动线${pathZh}`)
+  if (sp.traffic.note) spaceParts.push(sp.traffic.note)
   const chars = f.characters.length
-    ? f.characters.map(c => `${c.ref}（${pos(c.position.screen, c.position.depth)}，${c.facing}，${c.motion}）`).join('；')
+    ? f.characters.map(c => `${c.ref}(${pos(c.position.screen, c.position.depth)}·${c.facing}·${c.motion})`).join('；')
     : '无出镜人物'
-  const events = f.events.map(e => e.action).join(' → ')
-  return `四要素｜${time}｜${space}｜人物：${chars}｜事件：${events}`
+  const events = f.events.map(e => e.action).join('→')
+  return `四要素｜${timeParts.join('·')}｜${spaceParts.join('·')}｜人物：${chars}｜事件：${events}`
 }
 
 /** 可复制模板（示例读自规范文件 example；附枚举速查） */
