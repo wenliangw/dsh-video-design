@@ -30,15 +30,7 @@
       "doubao-seedance-1-0-pro-fast": "1.0profast",
       "doubao-seedance-1-0-pro": "1.0pro"
     },
-    "fallbackFamily": "generic",
-    "currentIdsByFamily": {
-      "2.5": "doubao-seedance-2-5-260628",
-      "2.0": "doubao-seedance-2-0-260128",
-      "2.0fast": "doubao-seedance-2-0-fast-260128",
-      "2.0mini": "doubao-seedance-2-0-mini-260615"
-    },
-    "currentIdsVerifiedAt": "2026-10-02",
-    "currentIdsNote": "两个方舟官方兼容源交叉核对（官方 model-list 为登录墙）；最终以方舟控制台开通为准。插件不内置默认模型（用户显式配置），本表仅作选择参考"
+    "fallbackFamily": "generic"
   },
   "request": {
     "promptMaxCharsZh": 500,

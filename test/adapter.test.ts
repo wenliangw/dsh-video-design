@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest'
-import * as fs from 'node:fs'
 import {
   defaultBaseUrl, familyOf, durationRangeOf,
   buildStandardSentence, buildVendorPrompt, clampPrompt,
@@ -32,13 +31,11 @@ describe('模型家族解析（api.json 契约驱动）', () => {
   it('未知前缀回退 generic 家族', () => {
     expect(familyOf('other-model')).toBe('generic')
   })
-  it('当前在售版本 ID（api.json currentIdsByFamily）家族解析正确', () => {
-    const apiJson = JSON.parse(fs.readFileSync(new URL('../src/adapters/seedance/api.json', import.meta.url), 'utf-8'))
-    const current: Record<string, string> = apiJson.models.currentIdsByFamily
-    expect(Object.keys(current).length).toBeGreaterThanOrEqual(4)
-    for (const [family, id] of Object.entries(current)) {
-      expect(familyOf(id), `${id} 应解析为 ${family}`).toBe(family)
-    }
+  it('日期版本号 ID 按前缀解析家族（新版本 ID 不需插件发版，同规则）', () => {
+    expect(familyOf('doubao-seedance-2-5-260628')).toBe('2.5')
+    expect(familyOf('doubao-seedance-2-0-260128')).toBe('2.0')
+    expect(familyOf('doubao-seedance-2-0-fast-260128')).toBe('2.0fast')
+    expect(familyOf('doubao-seedance-2-0-mini-260615')).toBe('2.0mini')
   })
   it('duration 范围按家族取值', () => {
     expect(durationRangeOf('2.5')).toEqual([4, 30])
