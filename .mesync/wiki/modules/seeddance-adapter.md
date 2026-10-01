@@ -1,29 +1,45 @@
-# 模块规划：seeddance-adapter
+# 模块规划：seeddance-adapter（火山方舟契约驱动）
 
-> 状态：v1 已实现（转译两层 / 参数映射 / 占位计价 / 幂等三份记录 / 错误映射 / API 客户端与任务查询 + 失败终态标记）。审查轮修订：费率系数×2（reference + content_filter 可叠加）计入预算闸与预览；`axes.format` 映射 `aspect_ratio`；attempts 追加；mini 无 1080p 档按 720p 计价。
+> 状态：v1 已实现。2026-09-27 按用户提供的最新官方文档（方舟 Doubao-Seedance）整模块重构：**契约文件化**（facts 在文件）——`src/adapters/seedance/overview.md`（人面）+ `api.json`（机面），实现 `seedance.ts` 运行时读 api.json，任何厂商事实零代码写死。旧 seeddance.io 国际站契约为过时契约，已废弃（用户原始文档归档于 `src/docs/seedance/overview.md`）。
 
-## 职责
+## 结构（一厂商一目录，2026-09-27 用户拍板）
 
-标准镜头语言 JSON ↔ seeddance 厂商请求的转译层：prompt 转译、参数映射、计价、错误处理。
+```
+src/adapters/
+├── README.md        ← 目录契约 + 维护流程（官方更新 → 改两层契约 → 跑测试钉一致性）
+├── registry.ts      ← 多厂商注册解析（.dvd.config.json 按 name 对应；apiKey 空回退 <NAME大写>_API_KEY）
+└── seedance/
+    ├── overview.md  ← 人类可读契约实录（来源 URL + 核对日期 + 参数表 + 待补录清单）
+    ├── api.json     ← 机器面事实（endpoints/paths/家族前缀/duration 范围/图上限/状态词/错误语义）
+    └── seedance.ts  ← 转译两层/参数映射/计价预估/错误映射/API 客户端/三份记录
+```
 
-## API 形态（官方，[createVideoGeneration](https://www.seeddance.io/zh/docs/createVideoGeneration)）
+api.json 只装「是什么」（What），不装「怎么做」（How）——转译句法、装配顺序、幂等/预算策略仍是代码职责。航运随包：copy-assets.mjs 把 `src/adapters/**/{*.md,*.json}` 复制进 lib/adapters，package.json files 已覆盖。
 
-- 提交：`POST /v1/videos/generations`，Bearer token，参数 = model（1.0-pro-fast/1.5-pro/2.0/2.0-fast/2.0-mini/2.5）、prompt（单一字符串）、duration（2–30s）、quality（480p/720p/1080p）、aspect_ratio（16:9/9:16/1:1/4:3/3:4/21:9/adaptive）、generate_audio、image_urls（1 张 I2V / 2 张首尾帧 / 3+ 参考生视频）、reference_mode（1–2 张当参考素材，仅 2.0/2.5）、content_filter、web_search。
-- 轮询：`GET /v1/tasks/{task_id}`；余额：`GET /getCredits`。
-- 错误码：402 余额不足 / 429 限流 / 422 参数错 → 映射中文可读提示 + 处置建议。
+## API 形态（方舟，2026-09-27 核对）
 
-## 转译规则（已实现）
+- 提交：`POST /api/v3/contents/generations/tasks`（baseUrl 覆盖链：.dvd.config.json > `SEEDANCE_BASE_URL` 环境变量 > api.json 默认 `https://ark.cn-beijing.volces.com`），Bearer Ark API Key。响应仅含任务 `id`（无状态字段，7 天有效）——归一化 `{task_id, status:'queued'}`。
+- 请求体：`model`（版本化 ID，如 `doubao-seedance-1-0-pro-250528`）、`content[]`（首条 `{type:'text'}` prompt + 可选 `{type:'image_url', image_url:{url, role}}`）、resolution（480p/720p/1080p/4k）、ratio（16:9/4:3/1:1/3:4/9:16/21:9/adaptive）、duration（按家族 clamp：2.5 [4,30] / 2.0 系列 [4,15] / 1.0 系列 [2,12]）、generate_audio（官方默认 true，仅 2.5/2.0 系列）、watermark（默认 false，恒显式）。
+- 轮询：`GET /api/v3/contents/generations/tasks/{id}`（路径待官方查询页核实，标记 `getTaskVerified:false`）；状态词 queued/running/succeeded/failed/expired。**无积分/余额查询 API**（getCredits 已整个移除）——余额与用量以方舟控制台为准。
+- 错误：400/401/403/429/5xx HTTP 语义 + 业务码 `InvalidParameter.TaskTypeConstraint` / `InvalidParameter.TaskTypeMismatch`（异步报错）→ 契约表逐条中文化。
 
-- 标准句法（`buildStandardSentence` 固定子句序 `[时间窗] 主体 | 镜头[key]值…`）→ 厂商叙述流（`buildVendorPrompt` 单窗合句、多窗「前 N 秒…随后…」）→ `toRequest` 参数映射（含 reference_mode/content_filter）。
-- 参考图模式附「真实摄影质感」提示语；image_urls 仅公网 HTTPS（本地 SVG 转 PNG 不能直接喂，v2 接图床）。
-- 错误码映射 ERROR_ZH；提示词长度截断。content_filter=false 按 1.1 倍费率计入预算与预览（官方契约），真实价格原样替换后 COMPILE 确认。
+## 校验/门控（实现要点）
 
-## 计价与成本（已实现）
+- `validateReferenceInput`：图 role 按张数自动分配（1=首帧 / 2=首尾帧 / 3+=参考图）；reference_mode → 全参考图，仅 2.5（≤30 张）/ 2.0 系列（≤9 张）；1.0 pro 仅首尾帧 2 张、1.0 pro fast 仅首帧 1 张——越界在 generate_shot 前置返回中文错误。
+- `familyOf`：按 Model ID 前缀解析（fast/mini 先于 2.0 基座匹配），未知前缀回退 generic（保守上限 [2,30]）。
+- prompt 兜底 `clampPrompt`：官方建议中文 ≤500 字（api.json promptMaxCharsZh），超长按「；」子句边界砍尾保主体。
+- 无声承诺：2.5/2.0 系列恒显式 `generate_audio=false`（官方默认 true，静默生成有声会破坏 v1 无声承诺）；1.0 系列不携带该字段。
 
-- `estimate`：模型×时长×画质×模式因子（reference ×1.1 与 content_filter=false ×1.1 **可叠加**）→ 预估积分；计价表为占位值，PRICING_NOTE 明示「真实费率以 getCredits 核实为准」（决策 ID 83186e33）。
-- `generate_shot` 侧：预算硬闸（工作区 config.budgetCredits ?? 插件配置）、dry_run 免费预览、task_id 幂等（pending 拒绝重复提交；attempts 追加不覆盖）、三份记录 `S00n.json`（shot/vendor_prompt/meta + attempts + status）。
-- `video_task`：done/succeeded/completed/success → 下载 mp4 更新记录；failed/error/cancelled → 记录标 failed（幂等重提前置）；两者之外显示进度。
-- **画幅轴与官方能力边界**：generate_shot 校验用 dvd 封闭 format 轴（16:9/9:16/1:1/4:3/21:9）；官方另支持 3:4/adaptive，要用须先扩轴（不得绕过校验）。
-- **官方响应结构（已核对）**：POST 返回 {task_id, status}；GET /v1/tasks/{id} 处理中 `output: null`，完成后成片 URL 在 **`output.video_url`**（顶层无）——`extractVideoUrl` 双路径读取；failed/error/cancelled 落记录 meta.error。
-- **请求体契约（已核对）**：content_filter 是 2.5 可选过滤器——仅显式 false 携带；reference_mode 仅 seedance-2.0/2.5 + 1–2 图（3+ 图走参考生视频）；image_urls 2.5 上限 30 张；negatives 接入 prompt；超长 prompt 按子句边界砍尾。
-- **运行期纪律**：fetch 全带超时（提交 60s/查询·余额 20s/下载 300s）；mp4 下载上限 500MB；同 shot 进程内互斥 + attempts 留 5 条防幂等竞态。
+## 计价与成本（2026-09-27 pivot）
+
+- `estimate` 恒返回 `estimatedCost=null` + 契约 pricingStatus=uncalibrated——方舟按人民币刊例价/秒计费，刊例价表待补录进 api.json pricing 段（补录后 estimate 自动给出元级预估，零代码改动）。已知活动价（2.0 mini 四折 / 2.0 fast 七五折，企业用户限时）只入 overview.md 参考层，不进估算。
+- `generate_shot`：预览明示「计价未校准 + 余额以控制台为准」；预算硬闸预算 budgetCredits（口径=元）仅在 `estimatedCost !== null` 时拦截，未校准时放行并显式提示「闸门未拦截」。
+- `video_task`：done 集合 = succeeded；失败终态 = failed/expired → 记录标 failed + 写服务端 error 归因（幂等重提前置）；成片 URL `content.video_url` 优先，`output.video_url` / 顶层 `video_url` 兜底。
+
+## 运行期纪律（沿用）
+
+fetch 全带超时（提交 60s / 查询 20s / 下载 300s）；mp4 下载上限 500MB；同 shot 进程内互斥 + attempts 留 5 条防幂等竞态；重复 POST = 第二个任务（record task_id 未完成拒绝重发）。
+
+## 待补录（overview.md 透明清单）
+
+查询任务官方文档页（getTask 路径最终核实）、error-codes 完整表、model-list/定价页、generate_audio 对 fast/mini 的支持矩阵——补录只动契约两层文件，不改实现代码。

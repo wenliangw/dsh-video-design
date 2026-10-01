@@ -4,7 +4,7 @@
 // - config/      配置（name / Config schema / inject）
 // - workspace/   工作区/故事上下文解析 + video_init 目录骨架
 // - doctrine/    官方能力库装载（11 域词汇轴 / 手法卡片 / 组合包，双面 md + YAML front-matter）
-// - adapter/     seeddance 转译层（标准 JSON → 厂商 prompt、计价、错误映射、API 客户端）
+// - adapters/   多厂商适配器（registry 注册解析 + 每厂商一目录：契约 overview.md/api.json 与实现同住；seeddance=火山方舟）
 // - db/          SQLite（story registry + 决策链）
 // - agent/       dsh 能力调用（session 事件、上下文注入、工具注册）
 //

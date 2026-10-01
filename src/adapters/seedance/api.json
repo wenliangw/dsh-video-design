@@ -1,0 +1,99 @@
+{
+  "meta": {
+    "adapter": "seedance",
+    "vendor": "火山方舟 Volcengine Ark · Doubao-Seedance",
+    "docSourceUrl": "https://ark.volcengine.com/region:cn-beijing/docs/ark/create-video-generation-task-api",
+    "verifiedAt": "2026-09-27",
+    "docProvidedByUser": true,
+    "currency": "CNY",
+    "pricingStatus": "uncalibrated"
+  },
+  "endpoints": {
+    "baseUrl": "https://ark.cn-beijing.volces.com",
+    "baseUrlEnv": "SEEDANCE_BASE_URL",
+    "paths": {
+      "createGeneration": "/api/v3/contents/generations/tasks",
+      "getTask": "/api/v3/contents/generations/tasks/{id}",
+      "getTaskVerified": false
+    }
+  },
+  "auth": {
+    "type": "bearer",
+    "keyEnv": "SEEDANCE_API_KEY"
+  },
+  "models": {
+    "familyByIdPrefix": {
+      "doubao-seedance-2-5": "2.5",
+      "doubao-seedance-2-0-fast": "2.0fast",
+      "doubao-seedance-2-0-mini": "2.0mini",
+      "doubao-seedance-2-0": "2.0",
+      "doubao-seedance-1-0-pro-fast": "1.0profast",
+      "doubao-seedance-1-0-pro": "1.0pro"
+    },
+    "fallbackFamily": "generic"
+  },
+  "request": {
+    "promptMaxCharsZh": 500,
+    "promptMaxWordsEn": 1000,
+    "durationRangeByFamily": {
+      "2.5": [4, 30],
+      "2.0": [4, 15],
+      "2.0fast": [4, 15],
+      "2.0mini": [4, 15],
+      "1.0pro": [2, 12],
+      "1.0profast": [2, 12],
+      "generic": [2, 30]
+    },
+    "resolutionEnum": ["480p", "720p", "1080p", "4k"],
+    "ratioEnum": ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"],
+    "generateAudio": {
+      "default": true,
+      "supportedFamilies": ["2.5", "2.0", "2.0fast", "2.0mini"],
+      "pluginPolicy": "v1 恒显式 false（保持无声承诺）；1.0 系列不携带该字段"
+    },
+    "imageCountsByFamily": {
+      "2.5": { "maxReference": 30, "maxFirstLastFrame": 2 },
+      "2.0": { "maxReference": 9, "maxFirstLastFrame": 2 },
+      "2.0fast": { "maxReference": 9, "maxFirstLastFrame": 2 },
+      "2.0mini": { "maxReference": 9, "maxFirstLastFrame": 2 },
+      "1.0pro": { "maxReference": 0, "maxFirstLastFrame": 2 },
+      "1.0profast": { "maxReference": 0, "maxFirstLastFrame": 1 },
+      "generic": { "maxReference": 0, "maxFirstLastFrame": 0 }
+    },
+    "imageConstraints": {
+      "formats": ["jpeg", "png", "webp", "bmp", "tiff", "gif", "heic", "heif"],
+      "ratioRange": [0.4, 2.5],
+      "pxRange": [300, 6000],
+      "maxMB": 30
+    },
+    "watermarkDefault": false
+  },
+  "task": {
+    "statuses": {
+      "queued": "排队中",
+      "running": "运行中",
+      "succeeded": "任务成功",
+      "failed": "任务失败",
+      "expired": "任务超时"
+    },
+    "terminal": ["succeeded", "failed", "expired"],
+    "done": ["succeeded"],
+    "ttlDays": 7,
+    "videoUrlPath": "content.video_url"
+  },
+  "errors": {
+    "knownBusinessCodes": {
+      "InvalidParameter.TaskTypeConstraint": "参数与实际任务类型不兼容（模型自动判定任务类型时）",
+      "InvalidParameter.TaskTypeMismatch": "显式指定的任务类型与实际判定不一致"
+    },
+    "http": {
+      "400": "请求参数或媒体素材不符合要求",
+      "401": "鉴权失败——检查 API Key / Endpoint 权限（.dvd.config.json 或 SEEDANCE_API_KEY 环境变量）",
+      "403": "无权限",
+      "429": "触发限流，稍后重试",
+      "500": "服务端错误，稍后重试",
+      "502": "网关错误，稍后重试",
+      "503": "服务不可用，稍后重试"
+    }
+  }
+}

@@ -10,10 +10,12 @@
     - id: dsh-video-design
       name: 'dsh-video-design'
       config:
-        seedanceModel: 'seedance-2.0-fast'
+        # 火山方舟 Doubao-Seedance Model ID（版本化；官方示例 doubao-seedance-1-0-pro-250528）
+        # 模型家族能力契约见 src/adapters/seedance/overview.md + api.json
+        seedanceModel: 'doubao-seedance-1-0-pro-250528'
         defaultDuration: 5
         defaultQuality: '720p'
         defaultAspectRatio: '16:9'
-        budgetCredits: 0
+        budgetCredits: 0  # 预算上限口径已随方舟契约定为人民币元（费率未校准前闸门放行并明示）
         referenceMode: true
         maxRecallDecisions: 5

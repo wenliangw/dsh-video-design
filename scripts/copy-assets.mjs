@@ -35,3 +35,25 @@ function copyDir(src, dst) {
 copyDir(srcTemplates, dstTemplates)
 
 console.log(`[copy-assets] 复制 ${count} 个模板文件到 lib/templates/`)
+
+// ---- 适配器契约资产（src/adapters/**/{*.md,*.json} → lib/adapters/；.ts 由 tsc 编译，不在此复制） ----
+const srcAdapters = path.join(root, 'src', 'adapters')
+const dstAdapters = path.join(root, 'lib', 'adapters')
+if (fs.existsSync(srcAdapters)) {
+  let adapterCount = 0
+  function copyAdapters(src, dst) {
+    for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+      const srcPath = path.join(src, entry.name)
+      const dstPath = path.join(dst, entry.name)
+      if (entry.isDirectory()) {
+        copyAdapters(srcPath, dstPath)
+      } else if (entry.name.endsWith('.md') || entry.name.endsWith('.json')) {
+        fs.mkdirSync(path.dirname(dstPath), { recursive: true })
+        fs.copyFileSync(srcPath, dstPath)
+        adapterCount++
+      }
+    }
+  }
+  copyAdapters(srcAdapters, dstAdapters)
+  console.log(`[copy-assets] 复制 ${adapterCount} 个适配器契约文件到 lib/adapters/`)
+}

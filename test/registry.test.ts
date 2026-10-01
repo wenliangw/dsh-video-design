@@ -6,7 +6,7 @@ import * as path from 'node:path'
 import {
   loadAdaptersConfig, resolveAdapter, describeAdapters,
   SUPPORTED_ADAPTERS, DEFAULT_ADAPTER, ADAPTER_CONFIG_FILE,
-} from '../src/adapter/registry.js'
+} from '../src/adapters/registry.js'
 
 let ws: string
 

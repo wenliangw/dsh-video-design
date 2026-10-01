@@ -1,175 +1,159 @@
-// test/adapter.test.ts — 两层转译 + 计价 + 三份记录
 import { describe, it, expect } from 'vitest'
 import {
-  buildStandardSentence, buildVendorPrompt, toRequest, estimate, clampPrompt,
-  readShotRecord, writeShotRecord, extractVideoUrl,
+  defaultBaseUrl, familyOf, durationRangeOf,
+  buildStandardSentence, buildVendorPrompt, clampPrompt,
+  validateReferenceInput, toRequest, estimate, extractVideoUrl,
+  extraDoneStatuses, extraFailedStatuses, isTerminalStatus,
   type ShotJSON,
-} from '../src/adapter/seeddance.js'
-import * as fs from 'node:fs'
-import * as os from 'node:os'
-import * as path from 'node:path'
+} from '../src/adapters/seedance/seedance.js'
 
-const shot: ShotJSON = {
+const baseShot = (over: Partial<ShotJSON> = {}): ShotJSON => ({
   shot: {
     index: 'S001',
-    episode: 'EP001',
-    subject: '主角缓步走向镜头',
-    windows: [{ from: '0s', to: '3s', movement: '远景固定' }],
+    subject: '少年在雨夜巷口回头',
     axes: {
-      size: 'FS',
-      angle: 'low',
-      movement: 'dolly-in',
-      composition: 'center',
-      lighting: 'rim-light',
-      color: 'cold',
-      pacing: 'tense',
-      sound: 'tense-strings',
-      vfx: 'none',
+      size: '近景', angle: '低角度仰拍', movement: '缓慢推近', composition: '中心对称',
+      lighting: '冷色侧逆光', color: '青蓝', pacing: '慢节奏', vfx: '微尘悬浮', format: '16:9',
     },
-    cards: ['low-angle-hero'],
   },
-  constraints: { avoid: ['多人物+大范围运动'], negatives: ['畸形手指'] },
-}
+  ...over,
+})
 
-describe('提示词两层标准化', () => {
-  it('标准层固定子句顺序，含时间窗', () => {
-    const s = buildStandardSentence(shot)
-    expect(s).toContain('[0s-3s]')
-    expect(s).toContain('主角缓步走向镜头')
-    expect(s).toContain('镜头[size]FS')
-    expect(s.indexOf('[0s-3s]')).toBeLessThan(s.indexOf('镜头[size]'))
+describe('模型家族解析（api.json 契约驱动）', () => {
+  it('按 Model ID 前缀解析，fast/mini 先于 2.0 基座', () => {
+    expect(familyOf('doubao-seedance-2-5-xxxx')).toBe('2.5')
+    expect(familyOf('doubao-seedance-2-0-fast-xxxx')).toBe('2.0fast')
+    expect(familyOf('doubao-seedance-2-0-mini-xxxx')).toBe('2.0mini')
+    expect(familyOf('doubao-seedance-2-0-xxxx')).toBe('2.0')
+    expect(familyOf('doubao-seedance-1-0-pro-fast-xxxx')).toBe('1.0profast')
+    expect(familyOf('doubao-seedance-1-0-pro-250528')).toBe('1.0pro')
   })
-
-  it('厂商层是单一字符串（无分段语法），多窗走叙述流', () => {
-    const multi: ShotJSON = {
-      shot: {
-        ...shot.shot,
-        windows: [
-          { from: '0s', to: '3s', movement: '快速推近' },
-          { from: '3s', to: '5s', movement: '环绕揭示' },
-        ],
-      },
-    }
-    const p = buildVendorPrompt(multi)
-    expect(p).toContain('前 3 秒')
-    expect(p).toContain('随后')
-    expect(p).not.toContain('[')
+  it('未知前缀回退 generic 家族', () => {
+    expect(familyOf('other-model')).toBe('generic')
   })
-
-  it('参考图模式附加照片质感提示', () => {
-    const p = buildVendorPrompt(shot, { photographic: true })
-    expect(p).toContain('真实摄影质感')
-    const plain = buildVendorPrompt(shot)
-    expect(plain).not.toContain('真实摄影质感')
+  it('duration 范围按家族取值', () => {
+    expect(durationRangeOf('2.5')).toEqual([4, 30])
+    expect(durationRangeOf('2.0fast')).toEqual([4, 15])
+    expect(durationRangeOf('1.0pro')).toEqual([2, 12])
+    expect(durationRangeOf('generic')).toEqual([2, 30])
+  })
+  it('base URL 契约默认指向方舟', () => {
+    expect(defaultBaseUrl()).toBe('https://ark.cn-beijing.volces.com')
   })
 })
 
-describe('参数映射与计价', () => {
-  it('toRequest 映射默认参数 + reference_mode（仅 2.0/2.5 且 1–2 图）', () => {
-    const req = toRequest(shot, {
-      model: 'seedance-2.5', duration: 5, quality: '720p', aspectRatio: '16:9',
-      referenceMode: true, contentFilter: true,
-      referenceUrls: ['https://cdn.example.com/a.png'],
-    })
-    expect(req.model).toBe('seedance-2.5')
-    expect(req.duration).toBe(5)
-    expect(req.reference_mode).toBe(true)
-    expect(req.image_urls).toEqual(['https://cdn.example.com/a.png'])
-    expect(req.content_filter).toBeUndefined()  // content_filter 默认 true，官方契约下不显式携带
+describe('两层提示词转译', () => {
+  it('标准层固定子句顺序、可倒解析', () => {
+    const s = buildStandardSentence(baseShot())
+    expect(s).toContain('[全程] 少年在雨夜巷口回头')
+    expect(s).toContain('镜头[size]近景')
+    expect(s).toContain('镜头[color]青蓝')
   })
-
-  it('content_filter=false 显式携带；reference_mode 条件：3+ 图/非 2.0/2.5 模型不携带', () => {
-    const off = toRequest(shot, {
-      model: 'seedance-2.5', duration: 5, quality: '720p', aspectRatio: '16:9',
-      referenceMode: true, contentFilter: false, referenceUrls: [],
-    })
-    expect(off.content_filter).toBe(false)
-    const three = toRequest(shot, {
-      model: 'seedance-2.5', duration: 5, quality: '720p', aspectRatio: '16:9',
-      referenceMode: true, contentFilter: true,
-      referenceUrls: ['https://a.com/1.png', 'https://a.com/2.png', 'https://a.com/3.png'],
-    })
-    expect(three.reference_mode).toBeUndefined()  // 3+ 张走参考生视频，非 reference_mode
-    expect(three.image_urls?.length).toBe(3)
-    const wrongModel = toRequest(shot, {
-      model: 'seedance-2.0-fast', duration: 5, quality: '720p', aspectRatio: '16:9',
-      referenceMode: true, contentFilter: true,
-      referenceUrls: ['https://cdn.example.com/a.png'].slice(0, 1),
-    })
-    // 官方：reference_mode 是 2.0/2.5 专属
-    expect(wrongModel.reference_mode).toBeUndefined()
+  it('厂商层叙述流注入 11 域扩展语与负向约束', () => {
+    const s = buildVendorPrompt(baseShot({ constraints: { negatives: ['避免出现车辆'] } }))
+    expect(s).toContain('少年在雨夜巷口回头')
+    expect(s).toContain('景别近景')
+    expect(s).toContain('避免：避免出现车辆')
   })
-
-  it('估算：未知型号按 fast 兜底并带 matchedModel=false 提示', () => {
-    const known = estimate('seedance-2.5', 5, '1080p')
-    expect(known.matchedModel).toBe(true)
-    const unknown = estimate('future-model-x', 5, '1080p')
-    expect(unknown.matchedModel).toBe(false)
-    expect(unknown.estimatedCredits).toBe(estimate('seedance-2.0-fast', 5, '1080p').estimatedCredits)
-  })
-
-  it('extractVideoUrl：官方层级 output.video_url 优先，顶层兜底', () => {
-    expect(extractVideoUrl({ status: 'done', output: { video_url: 'https://v.example/a.mp4' } })).toBe('https://v.example/a.mp4')
-    expect(extractVideoUrl({ status: 'processing', output: null })).toBe(null)
-    expect(extractVideoUrl({ status: 'processing', output: undefined, video_url: 'https://v.example/legacy.mp4' })).toBe('https://v.example/legacy.mp4')
-  })
-
-  it('clampPrompt 超长按子句边界砍尾部（主体保留）', () => {
-    const head = '主角缓步走向镜头'
-    const extras = '；气势氛围' + '长'.repeat(200)
-    const p = clampPrompt(`${head}${extras}；风格辅助`)
-    expect(p.length).toBeLessThanOrEqual(1501)
-    expect(p.startsWith(head)).toBe(true)
-  })
-
-  it('negatives 约束进入厂商层 prompt', () => {
-    const s: ShotJSON = {
-      shot: { ...shot.shot },
-      constraints: { negatives: ['畸形手指', '多指'] },
-    }
-    const p = buildVendorPrompt(s)
-    expect(p).toContain('避免')
-    expect(p).toContain('畸形手指')
-  })
-
-  it('计价跟随模型×时长×画质，含模式因子', () => {
-    const base = estimate('seedance-2.0-fast', 5, '720p')
-    const refMode = estimate('seedance-2.0-fast', 5, '720p', 1.1)
-    expect(refMode.estimatedCredits).toBeGreaterThan(base.estimatedCredits)
-    const hi = estimate('seedance-2.5', 5, '1080p')
-    expect(hi.estimatedCredits).toBeGreaterThan(base.estimatedCredits)
-  })
-
-  it('2.0-mini 无 1080p 档：按 720p 档计价（绝不出现 0 积分误导）', () => {
-    const c = estimate('seedance-2.0-mini', 5, '1080p')
-    expect(c.estimatedCredits).toBeGreaterThan(0)
-    expect(c.estimatedCredits).toBe(estimate('seedance-2.0-mini', 5, '720p').estimatedCredits)
+  it('prompt 超官方建议（500 字）按分句边界截断且主体在前', () => {
+    const long = '少年' + '冲'.repeat(700) + '；尾部补充'
+    const cut = clampPrompt(long)
+    expect(cut.length).toBeLessThanOrEqual(501)
+    expect(cut.startsWith('少年')).toBe(true)
   })
 })
 
-describe('shot 三份记录落盘', () => {
-  it('写读往返一致', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-video-'))
-    const file = path.join(dir, 'S001.json')
-    const record = {
-      shot,
-      vendor_prompt: 'test prompt',
-      meta: {
-        adapter: 'seeddance',
-        schema_ver: '1.0',
-        model: 'seedance-2.0-fast',
-        duration: 5,
-        quality: '720p',
-        status: 'pending' as const,
-        task_id: 'vid_test',
-        attempts: [{ at: new Date().toISOString(), task_id: 'vid_test', vendor_prompt: 'test prompt' }],
-      },
-    }
-    writeShotRecord(file, record)
-    const back = readShotRecord(file)
-    expect(back?.meta.task_id).toBe('vid_test')
-    expect(back?.shot.shot.axes.angle).toBe('low')
-    expect(back?.vendor_prompt).toBe('test prompt')
-    fs.rmSync(dir, { recursive: true, force: true })
+describe('参考图校验（家族上限）', () => {
+  const seedance25 = 'doubao-seedance-2-5-1'
+  const seedance20fast = 'doubao-seedance-2-0-fast-1'
+  const seedance10fast = 'doubao-seedance-1-0-pro-fast-1'
+  const seedance10pro = 'doubao-seedance-1-0-pro-1'
+  it('无图直通', () => {
+    expect(validateReferenceInput(seedance10fast, 0, false)).toBeNull()
+  })
+  it('1.0 pro fast 仅首帧 1 张', () => {
+    expect(validateReferenceInput(seedance10fast, 1, false)).toBeNull()
+    expect(validateReferenceInput(seedance10fast, 2, false)).toContain('最多支持 1 张')
+  })
+  it('1.0 系列不支持参考图（reference_mode）', () => {
+    expect(validateReferenceInput(seedance10pro, 2, true)).toContain('不支持参考图')
+    expect(validateReferenceInput(seedance10pro, 3, false)).toContain('不支持参考图生视频')
+  })
+  it('2.0 系列上限 9 张、2.5 上限 30 张', () => {
+    expect(validateReferenceInput(seedance20fast, 9, true)).toBeNull()
+    expect(validateReferenceInput(seedance20fast, 10, true)).toContain('上限 9 张')
+    expect(validateReferenceInput(seedance25, 30, true)).toBeNull()
+    expect(validateReferenceInput(seedance25, 31, true)).toContain('上限 30 张')
+  })
+  it('1.0 pro 支持首尾帧 2 张', () => {
+    expect(validateReferenceInput(seedance10pro, 2, false)).toBeNull()
+  })
+})
+
+describe('请求体映射（火山方舟形态）', () => {
+  it('content 首条为 text，时长按家族 clamp，watermark=false', () => {
+    const plan = toRequest(baseShot(), {
+      model: 'doubao-seedance-2-0-1', duration: 3, resolution: '720p', aspectRatio: '16:9', referenceMode: false, referenceUrls: [],
+    })
+    expect(plan.family).toBe('2.0')
+    expect(plan.duration).toBe(4) // 3s 低于 2.0 家族下限
+    expect(plan.body.content[0]).toEqual({ type: 'text', text: plan.vendorPrompt })
+    expect(plan.body.watermark).toBe(false)
+    expect(plan.body.generate_audio).toBe(false)
+    expect(plan.body.resolution).toBe('720p')
+    expect(plan.body.ratio).toBe('16:9')
+  })
+  it('1.0 系列不携带 generate_audio；duration 上限 clamp 12', () => {
+    const plan = toRequest(baseShot(), {
+      model: 'doubao-seedance-1-0-pro-250528', duration: 30, resolution: '1080p', aspectRatio: '16:9', referenceMode: false, referenceUrls: [],
+    })
+    expect(plan.family).toBe('1.0pro')
+    expect(plan.duration).toBe(12)
+    expect(plan.body).not.toHaveProperty('generate_audio')
+  })
+  it('两张图分配 first_frame/last_frame', () => {
+    const plan = toRequest(baseShot(), {
+      model: 'doubao-seedance-2-0-1', duration: 5, resolution: '720p', aspectRatio: '16:9', referenceMode: false,
+      referenceUrls: ['https://a.example/1.png', 'https://a.example/2.png'],
+    })
+    const imgs = plan.body.content.slice(1)
+    expect(imgs.map(i => i.image_url!.role)).toEqual(['first_frame', 'last_frame'])
+  })
+  it('reference_mode 全图 reference_image（2.5 家族）', () => {
+    const plan = toRequest(baseShot(), {
+      model: 'doubao-seedance-2-5-1', duration: 8, resolution: '720p', aspectRatio: '16:9', referenceMode: true,
+      referenceUrls: ['https://a.example/1.png', 'https://a.example/2.png'],
+    })
+    expect(plan.referenceRoles).toEqual(['reference_image', 'reference_image'])
+  })
+  it('3+ 张自动走参考图生视频 role', () => {
+    const plan = toRequest(baseShot(), {
+      model: 'doubao-seedance-2-5-1', duration: 8, resolution: '720p', aspectRatio: '16:9', referenceMode: false,
+      referenceUrls: ['https://a.example/1.png', 'https://a.example/2.png', 'https://a.example/3.png'],
+    })
+    expect(plan.referenceRoles).toEqual(['reference_image', 'reference_image', 'reference_image'])
+  })
+})
+
+describe('计价与状态', () => {
+  it('计价未校准：estimatedCost=null、CNY、matchedPricing=false', () => {
+    const est = estimate('doubao-seedance-2-0-1', 5, '720p')
+    expect(est.estimatedCost).toBeNull()
+    expect(est.currency).toBe('CNY')
+    expect(est.matchedPricing).toBe(false)
+    expect(est.pricingNote).toContain('未校准')
+  })
+  it('官方状态词汇：done=succeeded，失败终态含 failed/expired', () => {
+    expect(extraDoneStatuses()).toEqual(['succeeded'])
+    expect(extraFailedStatuses()).toContain('failed')
+    expect(extraFailedStatuses()).toContain('expired')
+    expect(isTerminalStatus('expired')).toBe(true)
+    expect(isTerminalStatus('succeeded')).toBe(true)
+  })
+  it('成片 URL：content.video_url 优先，output/顶层兜底', () => {
+    expect(extractVideoUrl({ content: { video_url: 'https://v/1.mp4' } })).toBe('https://v/1.mp4')
+    expect(extractVideoUrl({ content: null, output: { video_url: 'https://v/2.mp4' } })).toBe('https://v/2.mp4')
+    expect(extractVideoUrl({ video_url: 'https://v/3.mp4' })).toBe('https://v/3.mp4')
+    expect(extractVideoUrl(null)).toBeNull()
   })
 })

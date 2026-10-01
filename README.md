@@ -94,7 +94,7 @@ video-workspace/                  ← 视频工作区根
 
 ## 提示词标准化与透明性
 
-- **两层标准化**：标准层固定子句顺序 `[时间窗] 主体 | 镜头[size]值 | 镜头[angle]值 | …`（可倒解析回 8 个封闭视觉轴；声音/画幅/表演走厂商层扩展）；厂商层由 adapter 转译为叙述流单一字符串（seeddance 只收单一 prompt，[官方文档](https://www.seeddance.io/zh/docs/createVideoGeneration)）。**结构是我们的话语，厂商收的是翻译稿。**
+- **两层标准化**：标准层固定子句顺序 `[时间窗] 主体 | 镜头[size]值 | 镜头[angle]值 | …`（可倒解析回 8 个封闭视觉轴；声音/画幅/表演走厂商层扩展）；厂商层由 adapter 转译为 content 数组首条 text 的单一叙述流（方舟只收单一 text 提示词 + 可选 image_url；契约文件：`src/adapters/seedance/overview.md` + `api.json`）。**结构是我们的话语，厂商收的是翻译稿。**
 - **三份记录**：每 shot 落盘 `shot`（标准 JSON）/ `vendor_prompt`（厂商全文快照）/ `meta`（model、duration、quality、task_id、attempts[]）。
 - **透明性**：生成前 dry-run 展示全文（免费）；生成后任意时刻可回查；`attempts[]` 记录重拍历史，纠错归因直接回看喂给模型的原文。
 - **防重复提交**：官方明示「重复 POST 会创建第二个任务」→ 提交即写 task_id，未完成前同 shot 不重发。
@@ -117,10 +117,10 @@ video-workspace/                  ← 视频工作区根
 
 ## API 调用与成本
 
-- **调用形态**：主 Agent 沟通确认 → `generate_shot(标准JSON)` 工具执行 → adapter 内部转译（模型无需懂厂商细节）→ 异步任务（POST 即返回 task_id）→ `video_task` 轮询/取片（完成态成片 URL 在响应 `output.video_url`；失败态标记记录 failed）。（后台 job/完成通知为 v2。）
-- **凭据与保密**：`.dvd.config.json`（工作区根）配置多 adapter，按 `adapters[].name` 对应；`apiKey` 留空则回退环境变量 `<NAME大写>_API_KEY`（seedance 兼容 `SEEDANCE_API_KEY`）。初始化时**默认把该文件写进工作区根 .gitignore**（若使用 git）——用户 API 信息不提交远端；用户自行移出 ignore 行 = 明确决定共享，插件不再加回。v1 客户端仅 seeddance——配了未实现的 adapter 会在生成时诚实报错。
-- **成本六设计**：① 确认卡成本预估（模型×时长×画质×模式因子积分计价）；上游结构/分集确认同样附总成本框（单镜干跑抽样 × 每集镜头容量，标「预估区间」口径）；② 免费 dry-run；③ 预算硬闸（config.json 上限，超限工具拒绝）；④ `getCredits` 查真实余额；⑤ 同 shot 幂等防重复扣费（pending 拒重发 + 进程内互斥 + 记录损坏硬失败，attempts 留最近 5 次）；⑥ 单 shot 粒度出片 + 记忆 ROI。
-- **错误面**：402 余额不足 / 429 限流 / 422 参数错 → 中文可读提示；提示词超长按子句边界砍尾部（保主体）；content_filter 仅显式 false 时携带（按官方 1.1 倍费率并在确认卡标明）。
+- **调用形态**：主 Agent 沟通确认 → `generate_shot(标准JSON)` 工具执行 → adapter 内部转译（模型无需懂厂商细节）→ 异步任务（POST 仅返回任务 id，官方任务 id 保存 7 天）→ `video_task` 轮询/取片（状态词 queued/running/succeeded/failed/expired；完成态成片 URL 在 `content.video_url`；failed/expired 标记记录 failed）。（后台 job/完成通知为 v2。）
+- **凭据与保密**：`.dvd.config.json`（工作区根）配置多 adapter，按 `adapters[].name` 对应；`apiKey` 留空则回退环境变量 `<NAME大写>_API_KEY`（seedance 兼容 `SEEDANCE_API_KEY`）。初始化时**默认把该文件写进工作区根 .gitignore**（若使用 git）——用户 API 信息不提交远端；用户自行移出 ignore 行 = 明确决定共享，插件不再加回。v1 客户端仅 seeddance（火山方舟 Doubao-Seedance）——配了未实现的 adapter 会在生成时诚实报错。
+- **成本六设计**：① 确认卡成本预估（现为**未校准占位**：方舟按人民币刊例价/秒计费、无积分/余额查询 API，余额以方舟控制台为准；刊例价表待补录契约 api.json 的 pricing 段后给出元级预估）；上游结构/分集确认同样附总成本框（单镜干跑抽样 × 每集镜头容量，标「预估区间」口径）；② 免费 dry-run；③ 预算硬闸（config.json 的 budgetCredits，口径为元；费率未校准时闸门放行并明示不拦截）；④ 同 shot 幂等防重复扣费（pending 拒重发 + 进程内互斥 + 记录损坏硬失败，attempts 留最近 5 次）；⑤ 单 shot 粒度出片 + 记忆 ROI。
+- **错误面**：400 参数/媒体不符合要求、401 鉴权失败、403 无权限、429 限流、5xx 服务端错误 → 中文可读提示（契约表 + 业务码 `InvalidParameter.TaskTypeConstraint/TaskTypeMismatch`）；提示词超长按官方建议（中文 ≤500 字）子句边界砍尾部（保主体）；无声承诺：2.5/2.0 系列恒显式 `generate_audio=false`（官方默认 true），1.0 系列不携带该字段。
 
 ## MVP 边界
 
@@ -132,7 +132,7 @@ video-workspace/                  ← 视频工作区根
 
 1. ~~插件骨架（Cordis bundle + 注入面（全文件驱动）+ 工具面契约）~~ ✅ 已交付（`src/` 单包结构，包名 dsh-video-design）
 2. ~~doctrine：11 域词汇 schema + 精样板卡片 + 组合包~~ ✅ 已交付（11 轴 + 12 卡 + 3 组合包，front-matter 机器锚 + 装载器校验；JSON Schema 导出留批次二）
-3. ~~seeddance-adapter（转译/计价/错误映射）+ generate_shot 幂等实现~~ ✅ 已交付（占位计价表，决策 ID `83186e33`）
+3. ~~seeddance-adapter（转译/计价/错误映射）+ generate_shot 幂等实现~~ ✅ 已交付（决策 ID `83186e33`；近期按最新官方文档重构为**火山方舟契约驱动**：`src/adapters/seedance/{overview.md,api.json}` 事实文件化，代码零写死厂商事实）
 4. ~~story init / 激活三态 / 确认卡 + SVG 渲染 + 素材登记~~ ✅ 骨架已交付（video_init + 速览表三态 + svg_render；确认卡由 Agent 按 `_compile.skill.md` 组织）
 5. 上游创作链 ✅ 心法已交付：`_story`（口述情节→故事结构）/ `_novel2story`（小说→故事结构，事件推进提取）/ `_screenplay`（故事结构→分集剧本）/ `_script2shot`（剧本→拍片计划）——两输入源汇合 `.story/story-structure.md`，产物 script.md/plan.md 落 EP00N；（实际创作验证待晚间功能测试）
 5. 全链路验证：模糊需求 → 出片 → 纠错回流（单元/冒烟已过；profile 挂载 + 真实出片待用户 dsh 环境）
@@ -145,7 +145,7 @@ video-workspace/                  ← 视频工作区根
 dsh-video-design/
 ├── src/                        ← 插件源码
 │   ├── agent/                  ← 注入面（速览表/总纲/Story Context，全部读文件）+ 7 工具面
-│   ├── adapter/seeddance.ts    ← 两层转译/计价/幂等出片
+│   ├── adapters/                ← 多厂商适配器：registry.ts 注册解析 + seedance/{overview.md, api.json 契约, seedance.ts 实现} 一厂商一目录
 │   ├── doctrine/               ← 能力库装载器（资产在 src/templates/doctrine/：11 轴/12 卡/3 组合包）
 │   ├── templates/              ← 航运资产（doctrine + skills + rules + agents 母版 + story/workspace 种子）
 │   ├── workspace/  db/         ← 骨架初始化 · 工作区 sqlite 记忆索引

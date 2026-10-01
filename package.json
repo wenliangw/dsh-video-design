@@ -17,6 +17,8 @@
     "lib/types/**/*.d.ts",
     "lib/templates/**/*.md",
     "lib/templates/**/*.json",
+    "lib/adapters/**/*.md",
+    "lib/adapters/**/*.json",
     "cordis.patch.yml",
     "README.md"
   ],

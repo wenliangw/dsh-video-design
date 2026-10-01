@@ -1,26 +1,50 @@
-# seeddance 心法 — 转译 / 计价 / 底线（v1，随官方文档迭代）
+# _seedance — seeddance 转译·参数红线·计价底线（契约驱动）
 
-本插件与 seeddance 的契约（[官方 API 文档](https://www.seeddance.io/zh/docs/createVideoGeneration) 为基准，心法落后于官方时以官方为准）。
+> 本心法是「怎么做」（转译步法、政策）；「是什么」（地址、路径、入参标准、上限、状态词、错误语义）全部由契约文件承接：
+> - 机器面 `src/adapters/seedance/api.json`（代码运行时读取）
+> - 人类可读面 `src/adapters/seedance/overview.md`（官方文档实录 + 来源 URL + 核对日期 + 待补录清单）
+>
+> **厂商事实一律以契约文件为准，不得写死在代码或本心法里。** 官方文档更新走 `src/adapters/README.md` 维护流程（改契约 → 跑测试钉一致性）。
 
-## 两层转译铁律
+## 0. 适配器现状（诚实基线）
 
-- 标准层（我们的话语）：`[时间窗] 主体 | 镜头[size]值 | 镜头[angle]值 | …`——固定子句顺序，可倒解析回 11 域封闭视觉轴（声音/画幅/人物表演不在标准句里，走厂商层扩展）。
-- 厂商层（翻译稿）：seeddance 只收**单一自然语言字符串**，没有分段语法参数。单窗合句；多窗「前 N 秒…随后…」。
-- 参考图模式附「真实摄影质感，电影级光影」类提示语压图纸感。
+- seeddance = **火山方舟 Doubao-Seedance**（端点为 ark.cn-beijing.volces.com）。早前按 seeddance.io 国际站实现的契约为过时契约，已废弃。
+- 异步接口：POST 创建任务返回任务 `id`（仅存 **7 天**，无状态字段）→ GET 查询任务取成片（`content.video_url`）。
+- 状态词（官方）：`queued` 排队中 / `running` 运行中 / `succeeded` 成功（终态）/ `failed` 失败（终态）/ `expired` 超时（终态）。
+- **无积分/余额查询 API**：余额、用量以方舟控制台为准。计价预估当前为**未校准占位**，确认卡必须原文照说「未校准」+ 单位元（CNY）。
+- 官方提示词建议：中文 ≤500 字、英文 ≤1000 词，超长易信息分散、成片缺元素——v1 已按 500 字截断兜底。
 
-## 参数红线（能力边界）
+## 1. 两层转译铁律
 
-- duration 2–30s 整数；quality 480p/720p/1080p（2.0-mini 最高 720p）。**画幅以 11 域封闭轴为准：16:9/9:16/1:1/4:3/21:9**（generate_shot 校验）；官方另支持 3:4/adaptive，要用必须先扩展 format 轴，不能绕过校验。
-- image_urls 只收**公网 HTTPS** JPEG/PNG/WebP；每边 300–6000px、宽高比 0.4–2.5；1 张=I2V、2 张=首尾帧、3+ 张=参考生视频（2.5 最多 30 张，其余模型上限按 4 张）。
-- reference_mode 仅 `seedance-2.0`/`seedance-2.5` 两型号 + 1–2 张图（3+ 张自动走参考生视频，不设该旗标）；本地 SVG 转的 PNG 不能直接喂（无公网 URL）——v2 接图床上传。
-- **重复 POST = 第二个任务**：generate_shot 已做 task_id 幂等 + 同 shot 进程内互斥，Agent 不绕过工具手动重发。
-- content_filter 是 2.5 的可选过滤器（默认 true）：只有在显式传 false 时请求才携带该字段；关闭按官方 1.1 倍费率（确认卡须明示）。reference 系数 ×1.1 是保守占位估算（官方无此费率条款），真实费率以 getCredits 为准。
+- **标准层（我们的话语）**：`[时间窗] 主体 | 镜头[size]值 | 镜头[angle]值 | …`——固定子句顺序，可倒解析回 11 域封闭视觉轴（声音/画幅/表演不在标准句，走厂商层扩展）。
+- **厂商层（翻译稿）**：content 数组首条 `{type:'text'}` 收**单一自然语言字符串**，无分段语法。单窗合句；多窗「前 N 秒…随后…」。
+- 参考图模式附「真实摄影质感，电影级光影」类提示压图纸感。
 
-## 错误码应急
+## 2. 参数红线（以 api.json 契约为准，此处是使用摘要）
 
-402 余额不足 → 提示用户充值/调预算；429 限流 → 稍后重试；401 key 无效 → 检查 `.dvd.config.json` 的 `adapters[].apiKey`（文件优先）或环境变量 `SEEDANCE_API_KEY`；422 → 参数超能力边界，回查上表红线；请求超时（工具已带 60s 提交/20s 查询超时）→ 先 video_task 查是否已创建，避免重提产生双任务。
-- 出片取回：完成态成片 URL 在官方响应 `output.video_url`（视频下载超时 5 分钟、上限 500MB）；失败态（failed/error/cancelled）video_task 会把 shot 记录标 failed 并写入服务端 error 归因。
+- **duration 按家族**：2.5 [4,30]s / 2.0 系列 [4,15]s / 1.0 系列 [2,12]s（客户端按家族 clamp；官方 `-1`=模型自选，v1 恒显式传值）。
+- **resolution**：480p/720p/1080p/4k；v1 客户端只发 480/720/1080 三档，各模型支持上限以方舟 model-list 为准——越界靠服务端校验错误透明呈现，客户端不预判。
+- **ratio**：16:9/4:3/1:1/3:4/9:16/21:9/adaptive。
+- **参考图（content 的 image_url role）**：1 张=首帧 `first_frame`；2 张=首尾帧；3+ 张或 reference_mode=true=参考图 `reference_image`。参考图仅 2.5（≤30 张）/ 2.0 系列（≤9 张）；1.0 pro 仅首尾帧（≤2 张）、1.0 pro fast 仅首帧 1 张。图片只收公网 HTTPS（jpeg/png/webp/bmp/tiff/gif；2.0+ 另 heic/heif），边长 300–6000px、宽高比 0.4–2.5、<30MB。
+- **generate_audio**：官方 2.5/2.0 系列默认 true（有声）。**v1 政策：恒显式 false 保持无声承诺**；1.0 系列不携带该字段。将来开放有声是功能决策，不与官方默认绑定。
+- **watermark**：默认 false，客户端恒显式携带。
+- **无 content_filter 参数**（那是过时国际站契约）；**无 reference_mode 请求字段**（方舟用 role 表达），config.referenceMode 只是插件内 roi 分配语义触发器。
+- **重复 POST = 第二个任务**：generate_shot 已做 record 幂等 + 进程内互斥，Agent 不绕过工具手动重发。
 
-## 计价
+## 3. 错误面（契约表 + 兜底）
 
-adapter 内置占位计价表（积分/秒×模式因子）。**真实费率以 getCredits 核实为准**——核实后：用户侧更新工作区 `.dvd/skills/_seedance.skill.md`（本文件的实例化副本，改文件即改行为）；插件航运的 PRICE 表由维护者随包更新。
+- HTTP 语义：400 参数/媒体不符合要求、401 鉴权失败（查 `.dvd.config.json` `adapters[].apiKey` 或 `SEEDANCE_API_KEY`）、403 无权限、429 限流（稍后重试）、5xx 服务端（稍后重试）。
+- 业务码：`InvalidParameter.TaskTypeConstraint`（参数与自动判定任务类型不兼容，异步报错）、`InvalidParameter.TaskTypeMismatch`（显式任务类型与实际判定不一致，异步报错）。
+- 提交/查询超时（60s/20s）→ 先 video_task 查是否已创建，避免重提双任务。
+- 失败终态（failed/expired）：video_task 把 shot 记录标 failed 并写服务端 error 归因，解除 pending 死锁后允许重提。
+
+## 4. 计价与成本
+
+- **未校准占位**（est 返回 estimatedCost=null）：方舟计费为人民币刊例价/秒，无积分 API；官方刊例价表待补录进 `src/adapters/seedance/api.json` 的 `pricing` 段——补录后 estimate 自动给元级预估。
+- 已知限时活动价（仅企业用户、达量恢复刊例，勿写进估算）：2.0 mini 480p/720p 四折（720p≈0.2 元/秒）、2.0 fast 480p/720p 七五折（720p≈0.6 元/秒），活动期至 2026-10-07 14:00（UTC+8）。
+- 预算硬闸：`budgetCredits`（口径已定为元）> 0 且费率已校准才拦截；未校准时放行但确认卡/提交回复明示「闸门未拦截」。
+- dry_run 免费；确认卡必须明示「计价未校准」口径，绝不报一个没根据的数字。
+
+## 5. 契约维护
+
+官方文档更新 → 改 `src/adapters/seedance/overview.md`（人面）与 `api.json`（机面）两份 → 跑 `npx vitest run test/adapter.test.ts`（钉「代码行为=api.json 事实」）→ 提交。新增请求字段未接入插件语义时，先记入 overview.md「待补录」，不伪造支持。

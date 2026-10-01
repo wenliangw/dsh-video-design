@@ -15,14 +15,14 @@ import {
 } from '../workspace/index.js'
 import { loadAxes, validateAxes } from '../doctrine/index.js'
 import {
-  estimate, buildStandardSentence, buildVendorPrompt, toRequest,
-  createGeneration, getTask, getCredits,
+  estimate, buildStandardSentence, toRequest, validateReferenceInput,
+  createGeneration, getTask, extraDoneStatuses, extraFailedStatuses,
   readShotRecord, writeShotRecord, extractVideoUrl,
   type ShotJSON, type ShotRecord,
-} from '../adapter/seeddance.js'
+} from '../adapters/seedance/seedance.js'
 import {
   resolveAdapter, describeAdapters, SUPPORTED_ADAPTERS, DEFAULT_ADAPTER,
-} from '../adapter/registry.js'
+} from '../adapters/registry.js'
 import {
   initDB, registerStory, listStories,
   insertDecision, getRecentDecisions, searchDecisions, getDecisionById, updateDecisionOutcome,
@@ -336,14 +336,13 @@ export function registerTools(ctx: Context, config: Config): void {
       shot_json: { type: 'string', required: true, description: '标准镜头语言 JSON 原文。必填：shot.subject（主体与动作）、shot.index（如 S001）、shot.axes（11 域轴值 map：size/angle/movement/composition/lighting/color/pacing/sound/format/vfx/performance）。可选：shot.shot.duration（秒，2–30，缺失用工作区/插件默认）、shot.windows（[{from,to,movement}] 时间窗）、shot.cards（手法卡片 id 数组）、constraints、materials、meta。' },
       dry_run: { type: 'boolean', description: 'true 只校验+转译+计价不提交（默认：无 key 时强制 true）' },
       adapter: { type: 'string', description: `adapter 名（对应工作区 .dvd.config.json 里 adapters[].name）；默认 ${DEFAULT_ADAPTER}（v1 仅 seedance）` },
-      reference_urls: { type: 'string', description: 'JSON 数组：可公开访问的 HTTPS 图片 URL（PNG/JPEG/WebP）。无 reference_mode 时：1 张=图生视频、2 张=首尾帧、3+ 张=参考生视频；reference_mode=true 时 1–2 张当参考素材（仅 seedance-2.0/2.5）。2.5 上限 30 张，其余模型 4 张。' },
-      content_filter: { type: 'boolean', description: '默认 true；false 按官方 1.1 倍费率计费' },
+      reference_urls: { type: 'string', description: 'JSON 数组：可公开访问的 HTTPS 图片 URL（jpeg/png/webp/bmp/tiff/gif；2.0+ 另支持 heic/heif）。role 自动分配：1 张=首帧（first_frame）、2 张=首尾帧、3+ 张或 reference_mode=true=参考图（reference_image）。参考图仅 2.5（上限 30 张）/ 2.0 系列（上限 9 张）；1.0 系列仅支持首/尾帧（pro 2 张、fast 1 张）。' },
     },
     output: {
       schema: { type: 'string' },
       render: (_args: any, value: any) => [{ type: 'text', text: value }],
     },
-    async execute(args: { shot_json: string; dry_run?: boolean; adapter?: string; reference_urls?: string; content_filter?: boolean }, _exec: any) {
+    async execute(args: { shot_json: string; dry_run?: boolean; adapter?: string; reference_urls?: string }, _exec: any) {
       const vctx = effectiveContext()
       if (!vctx.storyRoot) return '当前不在任何故事目录。先在故事目录内工作（或 video_init 创建）。'
 
@@ -363,8 +362,6 @@ export function registerTools(ctx: Context, config: Config): void {
       const errors = validateAxes(shot.shot.axes, axes)
       if (errors.length > 0) return '轴值校验失败：\n' + errors.map(e => `- ${e}`).join('\n')
 
-      const contentFilter = args.content_filter ?? true
-
       // ---- 适配器解析（.dvd.config.json 按 name 对应；文件 apiKey 优先，环境变量兜底） ----
       const wsCfg = vctx.workspaceRoot ? loadWorkspaceConfig(vctx.workspaceRoot) : {}
       const adapterName = args.adapter ?? shot.meta?.adapter ?? wsCfg.adapter ?? DEFAULT_ADAPTER
@@ -382,16 +379,16 @@ export function registerTools(ctx: Context, config: Config): void {
       const apiBase = resolved.baseUrl
       const isDry = args.dry_run === true || !apiKey
 
-      // ---- reference_urls 校验：数组 + 公网 HTTPS + 张数上限（模型相关） ----
+      // ---- reference_urls 校验：数组 + 公网 HTTPS + 张数上限（按模型家族，读 api.json 契约） ----
       let referenceUrls: string[] = []
       try {
         const parsed = args.reference_urls ? JSON.parse(args.reference_urls) : []
         if (!Array.isArray(parsed)) return 'reference_urls 必须是 JSON 数组。'
         const bad = parsed.find(u => typeof u !== 'string' || !/^https:\/\//.test(u))
         if (bad !== undefined) return `reference_urls 含非法项（须公网 HTTPS URL）：${JSON.stringify(bad)}`
-        const cap = model.includes('2.5') ? 30 : 4
-        if (parsed.length > cap) return `reference_urls 超过 ${cap} 张上限（${model}）。`
         referenceUrls = parsed
+        const refErr = validateReferenceInput(model, referenceUrls.length, config.referenceMode)
+        if (refErr) return refErr
       } catch {
         return 'reference_urls 不是合法 JSON 数组。'
       }
@@ -402,20 +399,15 @@ export function registerTools(ctx: Context, config: Config): void {
         ? wsCfg.defaultQuality : config.defaultQuality
       const axisFormat = typeof shot.shot.axes?.format === 'string' ? shot.shot.axes.format.trim() : ''
       const aspectRatio = axisFormat || wsCfg.defaultAspectRatio || config.defaultAspectRatio
-      // 费率系数：reference_mode 带参考图 ×1.1（保守占位估算，官方无此费率条款）；content_filter=false 官方 ×1.1（可叠加）
-      let hasRefFactor = false
-      let modeFactor = 1
-      if (referenceUrls.length > 0 && config.referenceMode) { modeFactor *= 1.1; hasRefFactor = true }
-      if (contentFilter === false) modeFactor *= 1.1
-      const cost = estimate(model, duration, quality, modeFactor)
+      // 计价方向：方舟按人民币计费、无积分/余额 API——v1 计价为未校准占位，estimate 返回 null 时闸门放行并明示
+      const cost = estimate(model, duration, quality)
 
-      const request = toRequest(shot, {
+      const plan = toRequest(shot, {
         model,
         duration,
-        quality,
+        resolution: quality,
         aspectRatio,
         referenceMode: config.referenceMode,
-        contentFilter,
         referenceUrls,
       })
 
@@ -424,11 +416,14 @@ export function registerTools(ctx: Context, config: Config): void {
       const preview = [
         '## 🎬 镜头编译预览',
         `**标准层（可倒解析回 11 域）**：${buildStandardSentence(shot)}`,
-        `**厂商层（${adapterName} prompt 全文）**：${request.prompt}`,
-        `**参数**：adapter=${adapterName}｜model=${request.model}｜duration=${request.duration}s｜quality=${request.quality}｜aspect=${request.aspect_ratio}`,
-        referenceUrls.length ? `**参考图**：${referenceUrls.length} 张，reference_mode=${request.reference_mode}` : '**参考图**：无（纯文生视频）',
-        `**成本预估**：≈ ${cost.estimatedCredits} 积分（费率系数 ×${cost.modeFactor}${hasRefFactor ? '，reference 系数为保守占位估算（官方无此费率条款）' : ''}${cost.matchedModel ? '' : '；⚠️ 计价表无该型号，按 seedance-2.0-fast 档估算'}；${cost.pricingNote}）`,
+        `**厂商层（${adapterName} prompt 全文）**：${plan.vendorPrompt}`,
+        `**参数**：adapter=${adapterName}｜family=${plan.family}｜model=${plan.model}｜duration=${plan.duration}s｜resolution=${plan.resolution}｜ratio=${plan.ratio}${plan.body.generate_audio === false ? '｜generate_audio=false（v1 无声承诺）' : ''}`,
+        referenceUrls.length ? `**参考图**：${referenceUrls.length} 张，role=${plan.referenceRoles.join('/')}` : '**参考图**：无（纯文生视频）',
+        `**成本预估**：${cost.pricingNote}`,
       ]
+      if (cost.estimatedCost !== null) {
+        preview.push(`**金额**：约 ¥${cost.estimatedCost.toFixed(2)}（${cost.duration}s × ${cost.resolution}）`)
+      }
       if (resolved.corrupt) preview.push('⚠️ `.dvd.config.json` 存在但 JSON 损坏——凭证/模型配置未被读取（环境变量通道仍在）。修复该文件后重试。')
       if (vctx.workspaceRoot && workspaceConfigCorrupt(vctx.workspaceRoot)) preview.push('⚠️ `.dvd/config.json` 存在但 JSON 损坏——预算/默认参数已回退插件默认值，请修复以避免预算失守。')
 
@@ -447,16 +442,19 @@ export function registerTools(ctx: Context, config: Config): void {
       // ---- 幂等快路径：同 shot 有 pending 任务则拒绝重复提交 ----
       if (existing?.meta.task_id && existing.meta.status === 'pending') {
         const taskCheck = await getTask(existing.meta.task_id, apiKey, apiBase).catch(() => null)
-        if (!taskCheck || taskCheck.status === 'pending' || taskCheck.status === 'processing') {
-          return `该 shot 已有未完成任务 ${existing.meta.task_id}，拒绝重复提交（官方明示重复 POST 会创建第二个任务）。用 video_task 查进度；确认失败后 video_task 会把记录标记 failed，再重提。`
+        if (!taskCheck || taskCheck.status === 'queued' || taskCheck.status === 'running') {
+          return `该 shot 已有未完成任务 ${existing.meta.task_id}，拒绝重复提交（重复 POST 会创建第二个任务）。用 video_task 查进度；确认失败后 video_task 会把记录标记 failed，再重提。`
         }
       }
 
-      // ---- 预算硬闸 ----
+      // ---- 预算硬闸（方舟费率未校准时估值为 null：闸门放行但明示未拦截） ----
       const budget = wsCfg.budgetCredits ?? config.budgetCredits
-      if (budget > 0 && cost.estimatedCredits > budget) {
-        return `预算硬闸拦截：预估 ${cost.estimatedCredits} 积分 > 预算上限 ${budget}。调低时长/画质或修改 .dvd/config.json。`
+      if (budget > 0 && cost.estimatedCost !== null && cost.estimatedCost > budget) {
+        return `预算硬闸拦截：预估 ¥${cost.estimatedCost.toFixed(2)} > 预算上限 ¥${budget}。调低时长/画质或修改 .dvd/config.json。`
       }
+      const budgetPassiveNote = budget > 0 && cost.estimatedCost === null
+        ? `⚠️ 已设预算上限 ¥${budget}（.dvd/config.json budgetCredits，单位元），但方舟费率表未校准（刊例价待补录 api.json）——本单闸门未拦截。`
+        : ''
 
       // 同 shot 进程内互斥：并行 generate_shot 的 check-then-act 竞态防护（锁内重查 + POST + 落盘）
       return await withLock(recordFile, async () => {
@@ -464,34 +462,29 @@ export function registerTools(ctx: Context, config: Config): void {
         if (current?.meta.task_id && current.meta.status === 'pending') {
           try {
             const taskCheck = await getTask(current.meta.task_id, apiKey, apiBase)
-            if (taskCheck.status === 'pending' || taskCheck.status === 'processing') {
+            if (taskCheck.status === 'queued' || taskCheck.status === 'running') {
               return `该 shot 已有未完成任务 ${current.meta.task_id}，拒绝重复提交。`
             }
           } catch {
             return `该 shot 已有未完成任务 ${current.meta.task_id}，但远程查询失败（网络/权限），保守拒绝重提。用 video_task 确认状态后再试。`
           }
         }
-        let balanceInfo = ''
-        try {
-          const credits = await getCredits(apiKey, apiBase)
-          balanceInfo = `（当前余额：${JSON.stringify(credits)}）`
-        } catch { /* 查余额失败不阻塞 */ }
 
-        const task = await createGeneration(request, apiKey, apiBase)
+        const task = await createGeneration(plan.body, apiKey, apiBase)
 
         const record: ShotRecord = {
           shot,
-          vendor_prompt: request.prompt,
+          vendor_prompt: plan.vendorPrompt,
           meta: {
             adapter: adapterName,
             schema_ver: shot.meta?.schema_ver ?? current?.meta.schema_ver ?? '1.0',
-            model: request.model,
-            duration: request.duration,
-            quality: request.quality,
+            model: plan.model,
+            duration: plan.duration,
+            resolution: plan.resolution,
             task_id: task.task_id,
             status: 'pending',
             reference_urls: referenceUrls,
-            attempts: [...(current?.meta.attempts ?? []), { at: new Date().toISOString(), task_id: task.task_id, vendor_prompt: request.prompt }].slice(-5),
+            attempts: [...(current?.meta.attempts ?? []), { at: new Date().toISOString(), task_id: task.task_id, vendor_prompt: plan.vendorPrompt }].slice(-5),
           },
         }
         writeShotRecord(recordFile, record)
@@ -499,10 +492,11 @@ export function registerTools(ctx: Context, config: Config): void {
         return [
           ...preview,
           '',
-          `✅ 已提交生成：task_id=${task.task_id}，状态 ${task.status} ${balanceInfo}`,
+          budgetPassiveNote,
+          `✅ 已提交生成：task_id=${task.task_id}，创建即 ${task.status}（余额/用量以方舟控制台为准，无积分查询 API）`,
           `三份记录已落盘：${recordFile}（shot / vendor_prompt / meta）`,
           '出片后调用 video_task 查询并取回 mp4。',
-        ].join('\n')
+        ].filter(Boolean).join('\n')
       })
     },
   }))
@@ -539,7 +533,7 @@ export function registerTools(ctx: Context, config: Config): void {
       const task = await getTask(args.task_id, apiKey, resolved.baseUrl)
       const errText = (task.error && (task.error.message || task.error.code)) ? `${task.error.message ?? task.error.code}` : task.status
       // 失败终态：记录标记 failed + 失败归因（解除 pending 死锁，幂等重提的前置条件）
-      if (['failed', 'error', 'cancelled', 'canceled'].includes(task.status)) {
+      if (extraFailedStatuses().includes(task.status ?? '')) {
         if (shotsDir && args.index && record) {
           record.meta.status = 'failed'
           record.meta.error = typeof task.error === 'object' && task.error ? (task.error.message ?? task.error.code ?? task.status) : task.status
@@ -548,12 +542,12 @@ export function registerTools(ctx: Context, config: Config): void {
         }
         return `task ${args.task_id} 已失败（${errText}）。归因整改后重新 generate_shot 即可。`
       }
-      if (!['done', 'succeeded', 'completed', 'success'].includes(task.status)) {
+      if (!extraDoneStatuses().includes(task.status ?? '')) {
         return `task ${args.task_id} 状态：${task.status}。稍后再查。`
       }
-      // 官方响应层级：成片 URL 在 output.video_url（处理中为 null；顶层字段仅作兼容兜底）
+      // 官方响应层级：成片 URL 在 content.video_url（output.video_url / 顶层 video_url 仅为兼容兜底）
       const videoUrl = extractVideoUrl(task)
-      if (!videoUrl) return `task ${args.task_id} 已完成但响应里没有视频 URL（output.video_url 为空）。稍后重查或服务端回查。`
+      if (!videoUrl) return `task ${args.task_id} 已完成但响应里没有视频 URL（content.video_url 为空）。稍后重查或服务端回查。`
       if (!vctx.storyRoot || !shotsDir) return `task 完成，video_url=${videoUrl}（当前不在故事目录，未下载）`
 
       const base = args.index ?? args.task_id
