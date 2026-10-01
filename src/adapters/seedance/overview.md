@@ -8,6 +8,7 @@
 - **厂商**：火山方舟（Volcengine Ark）· Doubao-Seedance
 - **官方文档来源**：https://ark.volcengine.com/region:cn-beijing/docs/ark/create-video-generation-task-api
 - **本版核对日期**：2026-09-27（由用户提供的完整官方 md 转录；查询任务 API 与错误码总表两页待补录，见「待补录」）
+- **在售版本核对**：2026-10-02 按两个方舟官方兼容源交叉核对当前在售 Model ID（见「当前在售版本」）；官方 model-list 页为登录墙，最终以方舟控制台为准
 - **重要更正**：本适配器早前依据 seeddance.io（seedance 1.x 国际站）契约实现——**已过时**。现行官方契约为本文件所述火山方舟形态（端点、模型 ID、请求体、状态词均不同）。
 
 ## 基础地址与认证
@@ -30,10 +31,23 @@
 
 | 家族 | Model ID 形态 | 能力摘要 | duration | 有声 |
 |---|---|---|---|---|
-| Seedance 2.5 | `doubao-seedance-2-5-*`（如示例版本 `doubao-seedance-1-0-pro-250528` 的同款规则） | 全模态参考生成（图片 0–30 / 视频 ≤10 / 音频 ≤10）、图生首帧/首尾帧、文生、视频编辑/延长；`output_format` mp4/mov；`draft` 样片；`omni_reference_task_type` auto/reference/edit/extend | `[4,30]` 或 `-1` | 有声/无声 |
+| Seedance 2.5 | `doubao-seedance-2-5-*`（当前在售版本见下方） | 全模态参考生成（图片 0–30 / 视频 ≤10 / 音频 ≤10）、图生首帧/首尾帧、文生、视频编辑/延长；`output_format` mp4/mov；`draft` 样片；`omni_reference_task_type` auto/reference/edit/extend | `[4,30]` 或 `-1` | 有声/无声 |
 | Seedance 2.0 系列 | `doubao-seedance-2-0-*` / `-fast` / `-mini` | 全模态参考生成（图片 0–9 / 视频 ≤3 / 音频 ≤3）、首帧/首尾帧、文生；2.0 支持 4k | `[4,15]` 或 `-1` | 有声/无声 |
 | Seedance 1.0 pro | `doubao-seedance-1-0-pro-*` | 首帧/首尾帧/文生；`frames` 25+4n；`seed`/`camera_fixed`/`service_tier` | `[2,12]` | 无声 |
 | Seedance 1.0 pro fast | `doubao-seedance-1-0-pro-fast-*` | 首帧/文生（无首尾帧）；frames/seed/camera_fixed/service_tier | `[2,12]` | 无声 |
+
+### 当前在售版本（2026-10-02 交叉核对，以方舟控制台 model-list 为准）
+
+官方 model-list 页需登录，本表由两个方舟官方兼容源交叉核对（[亿速云 Seedance 2.x 文档](http://www.yisu.com/help/ai_docs/video-api/api-capabilities/seedance_2x.html) 的上游模型 ID 表 + [apifox 官方格式接口页](https://gpt-best.apifox.cn/api-510675713)）。**插件默认 `doubao-seedance-2-0-fast-260128`**（生成快、720p 上限与 v1 默认画质一致；需要 1080p 换 2.0 基座、需要 4k/长时长/全模态参考换 2.5）。
+
+| 家族 | 当前在售版本 ID | 分辨率上限 |
+|---|---|---|
+| Seedance 2.5 | `doubao-seedance-2-5-260628` | 480p/720p/1080p/4k |
+| Seedance 2.0 | `doubao-seedance-2-0-260128` | 480p/720p/1080p/4k |
+| Seedance 2.0 fast | `doubao-seedance-2-0-fast-260128` | 480p/720p |
+| Seedance 2.0 mini | `doubao-seedance-2-0-mini-260615` | 480p/720p |
+
+> 旧示例 ID `doubao-seedance-1-0-pro-250528` 已过时，仅作 1.0 家族前缀解析的历史样例保留在代码测试中，不用于默认配置。
 
 ## 请求入参（标准）
 
@@ -41,7 +55,7 @@
 
 | 字段 | 类型 | 必填 | 要点 |
 |---|---|---|---|
-| `model` | string | ✅ | 方舟 Model ID 或 Endpoint ID（版本化 ID，如 `doubao-seedance-1-0-pro-250528`） |
+| `model` | string | ✅ | 方舟 Model ID 或 Endpoint ID（版本化 ID，当前在售如 `doubao-seedance-2-0-fast-260128`，见「当前在售版本」表） |
 | `content` | array | ✅ | 多模态内容列表，见下 |
 | `resolution` | string | 否 | `480p`/`720p`/`1080p`/`4k`；各模型支持上限以 model-list 为准（客户端不预判，越界错误由接口返回并透明呈现） |
 | `ratio` | string | 否 | `16:9`/`4:3`/`1:1`/`3:4`/`9:16`/`21:9`/`adaptive`；1.0 系列文生默认 `16:9`、图生默认 `adaptive` |
@@ -112,5 +126,5 @@
 
 1. 查询视频生成任务 API 正文（响应结构/字段）——官方页 /ark/get-video-generation-task-api
 2. 错误码完整表——官方页 /ark/error-codes
-3. 各模型 Model ID 全表 + 分辨率上限表 + 刊例价表——model-list / 计费页
+3. 🟡→🟢（部分）Model ID 全表：当前在售版本经两官方兼容源交叉核对（见「当前在售版本」），官方 model-list 页登录墙未直读；各模型分辨率上限表与刊例价表仍待 model-list / 计费页补录
 4. 各家族 `generate_audio` 精确支持面（fast/mini 是否有声）——模型能力页
