@@ -26,27 +26,22 @@ export interface ShotJSON {
 // ---------- 契约装载（运行时读 api.json，不写死厂商事实） ----------
 
 interface SeedanceContract {
-  meta: { adapter: string; pricingStatus: string }
   endpoints: {
     baseUrl: string
     baseUrlEnv: string
     paths: { createGeneration: string; getTask: string }
   }
-  auth: { keyEnv: string }
   models: { familyByIdPrefix: Record<string, string> }
   request: {
     promptMaxCharsZh: number
     durationRangeByFamily: Record<string, [number, number]>
-    generateAudio: { supportedFamilies: string[]; pluginPolicy: string }
+    generateAudio: { supportedFamilies: string[] }
     imageCountsByFamily: Record<string, { maxReference: number; maxFirstLastFrame: number }>
     watermarkDefault: boolean
   }
   task: {
-    statuses: Record<string, string>
     terminal: string[]
     done: string[]
-    ttlDays: number
-    videoUrlPath: string
   }
   errors: {
     knownBusinessCodes: Record<string, string>
@@ -458,7 +453,7 @@ export async function createGeneration(
   return { task_id: String(id), status: 'queued' }
 }
 
-/** 查询任务 GET /api/v3/contents/generations/tasks/{id}（路径形态待官方查询页最终核实，见 api.json getTaskVerified） */
+/** 查询任务 GET /api/v3/contents/generations/tasks/{id}（路径形态待官方查询页最终核实，见 overview.md「待补录」） */
 export interface SeedanceTask {
   id?: string
   status?: string
