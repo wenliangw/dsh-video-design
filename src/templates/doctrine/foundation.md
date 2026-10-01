@@ -34,6 +34,9 @@ required:
   - path: characters[].motion
     kind: string
     label: 动作（如「推车缓行」）
+  - path: characters[].props
+    kind: optionalStringArray
+    label: 随身持有物（「道具名（状态）」数组，不携带可缺省）
   - path: events
     kind: arrayNonEmpty
     label: 事件序列（至少 1 个）
@@ -130,6 +133,12 @@ example:
 - **space**：地点 + 道路走向（`geometry.roadDirection`，**纵深 depth / 横铺 lateral / none**）+ 相机方位与 180° 轴线（`camera`）+ 动线（`traffic.screenPath`）+ 五层次（`layers`：主体陪体前景背景环境各有什么）。
 - **characters**：编号（id）→ 角色（ref，引用 `material/` 实体名或 wiki 规范名）→ **画面位**（position.screen=画左/画右/画中/整体 + position.depth=前景/中景/背景）→ 朝向（facing）→ 动作（motion）。多人戏必须每人写死画面位（跨镜一致 = 输入一致）。
 - **events**：编号动作序列（seq 1..N = 镜头内时间线），事件主体（who 引用角色 id 或「环境/镜头」）。一镜只讲一个信息落点。
+
+## 持有物（characters[].props）
+
+- 人物随身携带的道具在 `props` 声明为「名（状态）」数组：`["银灰色旧单车（全程推行：行驶/停靠/续行均不离手）"]`。
+- **事件序列的每个动作段必须重述持有状态**：尾段动作写「并肩走远（A 推着车）」，不写「并肩走远」——历史事故：S006 尾段丢车，人走了车留在原地。
+- 不携带道具缺省该字段；道具的外观锚与跨镜一致性走 material 道具档案（共识门控），不在 foundation 复制一份。
 
 ## 方向词纪律（先世界后屏幕）
 

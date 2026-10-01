@@ -95,6 +95,20 @@ describe('四要素基础卡校验', () => {
     expect(s).toContain('动线')
   })
 
+  it('持有物 props：合法声明 → 放行并渲染出「持」', () => {
+    const f = base()
+    f.characters[0].props = ['银灰色旧单车（全程推行：行驶/停靠/续行均不离手）']
+    expect(validateFoundation(f)).toEqual([])
+    expect(renderFoundation(f)).toContain('持银灰色旧单车')
+  })
+
+  it('持有物 props：形态不符 → 拦截', () => {
+    const f = base()
+    f.characters[0].props = '带错了类型' as never
+    const errors = validateFoundation(f)
+    expect(errors.some(e => e.includes('道具名（状态）'))).toBe(true)
+  })
+
   it('可复制模板是合法 JSON 且含 foundation 键', () => {
     const t = foundationTemplate()
     const json = t.slice(0, t.indexOf('枚举速查'))

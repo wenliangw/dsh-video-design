@@ -38,6 +38,8 @@ export interface FoundationCharacter {
   position: { screen: string; depth: string }
   facing: string
   motion: string
+  /** 随身持有物（「道具名（状态）」数组；不携带缺省） */
+  props?: string[]
 }
 
 export interface FoundationEvent {
@@ -56,7 +58,7 @@ export interface Foundation {
 
 // ---------- 规范装载（front-matter 机器锚，缓存） ----------
 
-export type RequiredKind = 'string' | 'number' | 'array' | 'arrayNonEmpty' | 'stringArray'
+export type RequiredKind = 'string' | 'number' | 'array' | 'arrayNonEmpty' | 'stringArray' | 'optionalStringArray'
 
 export interface RequiredEntry {
   path: string
@@ -151,6 +153,17 @@ export function validateFoundation(f: Foundation | null | undefined): string[] {
       }
       if (entry.kind === 'arrayNonEmpty' && arr.length === 0) {
         errors.push(`${entry.label}（${entry.path}）不能为空数组。`)
+      }
+      continue
+    }
+    if (entry.kind === 'optionalStringArray') {
+      // 可选字段：角色未声明持有物（节点缺失）合法；声明则必须是「名（状态）」非空字符串数组
+      for (const nd of nodes) {
+        if (nd === undefined || nd === null) continue
+        if (!Array.isArray(nd) || nd.length === 0 || !nd.every((x): x is string => typeof x === 'string' && x.trim() !== '')) {
+          errors.push(`${entry.label}（${entry.path}）形态不符：应为「道具名（状态）」字符串数组，不携带则整字段缺省。`)
+          break
+        }
       }
       continue
     }
@@ -252,7 +265,10 @@ export function renderFoundation(f: Foundation): string {
   spaceParts.push(`动线${pathZh}`)
   if (sp.traffic.note) spaceParts.push(sp.traffic.note)
   const chars = f.characters.length
-    ? f.characters.map(c => `${c.ref}(${pos(c.position.screen, c.position.depth)}·${c.facing}·${c.motion})`).join('；')
+    ? f.characters.map(c => {
+        const carried = c.props?.length ? `持${c.props.join('、')}` : ''
+        return `${c.ref}(${[pos(c.position.screen, c.position.depth), c.facing, c.motion, carried].filter(Boolean).join('·')})`
+      }).join('；')
     : '无出镜人物'
   const events = f.events.map(e => e.action).join('→')
   return `四要素｜${timeParts.join('·')}｜${spaceParts.join('·')}｜人物：${chars}｜事件：${events}`
