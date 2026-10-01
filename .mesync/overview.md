@@ -26,8 +26,8 @@ dsh-video-design 是运行在 DeepSeek Harness(dsh) 里的**视频创作插件**
 - **dsh-video（插件核心）**：Cordis bundle——注入面（能力速览表常驻 + AGENTS.md 总纲 + Story Context 投影，**全部文件驱动、代码不写死提示词**）+ 工具面（`video_init`/`video_view`、`generate_shot` 幂等出片、`video_task`、`svg_render`、`video_remember`/`video_recall`）+ 骨架初始化 + 多 adapter 凭证配置（`.dvd.config.json`）+ 决策库。详见 [wiki/modules/plugin-core.md](wiki/modules/plugin-core.md)
 - **doctrine（官方能力库）**：三阶层能力库——11 域词汇轴、手法卡片（provenance 官方/项目沉淀）、组合包；静态航运，SKILL.md + references 按需读。详见 [wiki/modules/doctrine.md](wiki/modules/doctrine.md)
 - **seeddance-adapter**：标准镜头语言 JSON → seeddance prompt 转译、计价表、错误码映射、reference_mode/首帧模式。详见 [wiki/modules/seeddance-adapter.md](wiki/modules/seeddance-adapter.md)
-- **skills 家族（心法）**：记忆整理组（sync wiki/taste/decision/correction）、transform 组（compile/确认卡/dry-run）、SVG 绘制规范组、adapter 组。详见 [wiki/modules/doctrine.md](wiki/modules/doctrine.md)
+- **skills 家族（心法）**：上游创作链（`_story` 口述情节→故事结构 / `_novel2story` 小说→故事结构 / `_screenplay` 故事→分集剧本 / `_script2shot` 剧本→拍片计划）、transform 组（compile/确认卡/dry-run）、SVG 绘制规范组、adapter 组、记忆整理组（sync wiki/taste/decision/correction）。详见 [wiki/modules/doctrine.md](wiki/modules/doctrine.md)
 
 ## 状态
 
-设计讨论定稿（v2，README.md 为完整设计文档）；**v1 首版已交付并推送远端**（github.com/wenliangw/dsh-video-design master；本机 git HTTPS 传输层 GnuTLS 握手失败，已切 SSH remote 正常推拉，见 corrections/env-git-push.md）；单包结构（包名 dsh-video-design，源码在 `src/`，非多包 monorepo；`.dvd` 名即 dsh-Video-Design 缩写）+ doctrine（11 轴/12 卡/3 组合包）+ seeddance adapter + 7 工具 + 三块注入面（全文件驱动，代码零提示词）+ 工作区行为配置生效 + 6 rules/10 skills 航运资产 + `.mesync` 项目记忆随仓库走（敏感审计通过）；profile 挂载与实际场景功能测试待用户 dsh 环境（晚间开始）。
+设计讨论定稿（v2，README.md 为完整设计文档）；**v1 首版已交付并推送远端**（github.com/wenliangw/dsh-video-design master；本机 git HTTPS 传输层 GnuTLS 握手失败，已切 SSH remote 正常推拉，见 corrections/env-git-push.md）；单包结构（包名 dsh-video-design，源码在 `src/`，非多包 monorepo；`.dvd` 名即 dsh-Video-Design 缩写）+ doctrine（11 轴/12 卡/3 组合包）+ seeddance adapter + 7 工具 + 三块注入面（全文件驱动，代码零提示词）+ 工作区行为配置生效 + 6 rules/14 skills 航运资产 + **上游创作链三层心法**（story-structure 事件弧五段 → 分集剧本四拍+beat → 拍片计划拆镜，两输入源：口述情节/小说，汇合 `.story/story-structure.md`）+ `.mesync` 项目记忆随仓库走（敏感审计通过）；profile 挂载与实际场景功能测试待用户 dsh 环境（晚间开始）。

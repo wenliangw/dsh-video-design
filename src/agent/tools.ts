@@ -154,8 +154,8 @@ export function registerTools(ctx: Context, config: Config): void {
         '',
         '目录契约：',
         '  .dvd/skills,rules,tastes,db,config.json,doctrine ← 机制 + 工作区级审美 + 配置 + 官方能力库副本',
-        '  <story>/.story/{wiki,tastes,material,corrections} ← 故事级记忆（decisions 落 .dvd/db）',
-        '  <story>/EP001/shots/ ← 创作资产（S001.json 三份记录 + S001.mp4）',
+        '  <story>/.story/{wiki,tastes,material,corrections} + story-structure.md ← 故事级记忆 + 跨集故事结构',
+        '  <story>/EP001/{script.md,plan.md,shots/} ← 创作资产（剧本 → 拍片计划 → S001.json 三份记录 + S001.mp4）',
       ]
       const stories = listStories()
       if (stories.length > 1) {
@@ -186,6 +186,8 @@ export function registerTools(ctx: Context, config: Config): void {
         const parts: string[] = []
         const overview = path.join(storyRoot, '.story', 'overview.md')
         if (fs.existsSync(overview)) parts.push(fs.readFileSync(overview, 'utf-8'))
+        const structure = path.join(storyRoot, '.story', 'story-structure.md')
+        if (fs.existsSync(structure)) parts.push(fs.readFileSync(structure, 'utf-8'), '')
         const eps = fs.readdirSync(storyRoot).filter(e => /^EP\d+$/.test(e)).sort()
         if (eps.length > 0) {
           parts.push('## EP 进度')
@@ -193,7 +195,9 @@ export function registerTools(ctx: Context, config: Config): void {
             const shotsDir = path.join(storyRoot, ep, 'shots')
             const shots = fs.existsSync(shotsDir) ? fs.readdirSync(shotsDir).filter(f => f.endsWith('.json')) : []
             const video = fs.existsSync(path.join(storyRoot, ep, 'video.mp4'))
-            parts.push(`- ${ep}：${shots.length} 镜头${video ? '，✅ video.mp4' : ''}`)
+            const script = fs.existsSync(path.join(storyRoot, ep, 'script.md')) ? '📝 剧本' : ''
+            const plan = fs.existsSync(path.join(storyRoot, ep, 'plan.md')) ? '🗺 拍片计划' : ''
+            parts.push(`- ${ep}：${shots.length} 镜头${video ? '，✅ video.mp4' : ''}${script ? `，${script}` : ''}${plan ? `，${plan}` : ''}`)
           }
           parts.push('')
         }

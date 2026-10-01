@@ -14,9 +14,11 @@ dsh-video-design（dvd）是 dsh 视频创作插件：把自然语言编译成�
 
 自然语言 → 专业镜头语言（11 域校验）→ 两层提示词 → 出片（seeddance）；记忆五块越用越懂用户。
 
-## 主工作闭环（七步）
+## 主工作闭环（上游创作链 + 七步编译环）
 
-判定具体度（具体直编译/模糊选项化）→ 记忆预筛（video_recall + tastes/corrections 文件，高置信预填、历史坑转约束）→ 分层选项 ≤3 轮（感觉→手法→补缺，从手法卡/组合包取正交选项）→ 确认卡（SVG 构图预览 + 11 域清单 + 素材登记区 + 约束区 + 成本预估）→ `generate_shot` 出片（dry_run 先行）→ `video_task` 取片 → 纠错回流（记因果不记结果）。
+**上游创作链**（整故事/单集需求走这里）：口述情节 `_story` 或小说 `_novel2story`（以事件为单位推进，提取完整故事结构）→ `.story/story-structure.md`（事件弧五段 + 分集计划，用户确认）→ 分集 → `_screenplay` 每集四拍+beat 剧本（`EP00N/script.md`）→ `_script2shot` 拆镜+11 域草案（`EP00N/plan.md`，卡片库在此充当转译词典）。单镜头需求直接进编译环。
+
+**七步编译环**：判定具体度（具体直编译/模糊选项化）→ 记忆预筛（video_recall + tastes/corrections 文件，高置信预填、历史坑转约束）→ 分层选项 ≤3 轮（感觉→手法→补缺，从手法卡/组合包取正交选项）→ 确认卡（SVG 构图预览 + 11 域清单 + 素材登记区 + 约束区 + 成本预估）→ `generate_shot` 出片（dry_run 先行）→ `video_task` 取片 → 纠错回流（记因果不记结果）。
 
 ## 三阶层能力库
 
@@ -30,7 +32,7 @@ dsh-video-design（dvd）是 dsh 视频创作插件：把自然语言编译成�
 
 | 工具 | 干什么 |
 |---|---|
-| `video_init` / `video_view` | 建工作区+故事骨架 / 故事全景（进度·决策·记忆） |
+| `video_init` / `video_view` | 建工作区+故事骨架 / 故事全景（故事结构·剧本·进度·决策·记忆） |
 | `generate_shot` | 校验 → 两层转译 → 计价 → dry_run 预览 → 幂等提交；adapter 按 `.dvd.config.json` 的 `name` 对应 |
 | `video_task` | 查任务进度；完成取回 mp4 落 `EP/shots/` 并回填记录状态 |
 | `svg_render` | SVG → PNG（确认卡/设定卡预览图） |
@@ -59,7 +61,7 @@ dsh-video-design（dvd）是 dsh 视频创作插件：把自然语言编译成�
 
 ## 分层心法（按需读 `.dvd/skills/` 与 `.dvd/rules/`，具体操作不凭感觉）
 
-- 创作管线：`_compile`（收敛协议）/ `_svg_preview`（绘制规范）/ `_seedance`（转译·计价·底线）
+- 创作管线：`_story`（口述情节→故事结构）/ `_novel2story`（小说→故事结构）/ `_screenplay`（故事→分集剧本）/ `_script2shot`（剧本→拍片计划，key 连接）→ `_compile`（逐镜收敛协议）/ `_svg_preview`（绘制规范）/ `_seedance`（转译·计价·底线）
 - 官方能力库正文：`.dvd/doctrine/`（axes 11 轴 / cards 12 卡 / presets 3 包——compile 选项化从 cards/presets 抽样；封闭轴硬校验以插件航运为准）
 - 记忆五块：`_init_story` / `_sync_wiki` / `_sync_taste` / `_sync_decision` / `_material` / `_correction` ＋总览 `_sync_video_memory`
 - 规则（判定与边界，动手前对照）：`_workspace`（目录/配置契约）、`_sync_wiki` / `_sync_decision` / `_sync_taste` / `_material`（四块记忆判定规范）、`_correction`（纠错纪律）

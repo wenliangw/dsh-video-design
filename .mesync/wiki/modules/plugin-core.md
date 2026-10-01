@@ -36,14 +36,14 @@ Cordis bundle——注入面 + 工具面 + 工具内部实现。
 - **心法总纲**：读故事 `AGENTS.md` 原文；缺失/空白回退航运母版 `AGENT_TEMPLATE.md`（无硬编码兜底文案）。
 - **Story Context**：动态数据投影（overview/品味/EP进度/素材/纠错/决策），结构标签在代码、内容全部来自文件与 db。
 - 种子模板（story overview/README、workspace README、dvd-config.json）也全部航运文件化（`src/templates/story|workspace/`），`seedFileIfAbsent` 幂等播种。
-- skills + rules 按需读（skill = 怎么做，rule = 判定与边界，动手前先读规则再读心法）：航运拷贝至 `.dvd/skills` + `.dvd/rules`（用户可编辑），主 Agent 用 read 工具读。内部文件一律 `_` 下划线命名。rules 家族六份：`_workspace`（目录/配置契约）、`_sync_wiki` / `_sync_decision` / `_sync_taste` / `_material`（记忆四块判定规范，对齐 mesync rule=规范层形态）、`_correction`（纠错纪律）；出片底线（幂等/dry-run/预算）不单独成 rule（已代码硬闸 + 红线，防三处重复）。
+- skills + rules 按需读（skill = 怎么做，rule = 判定与边界，动手前先读规则再读心法）：航运拷贝至 `.dvd/skills` + `.dvd/rules`（用户可编辑），主 Agent 用 read 工具读。内部文件一律 `_` 下划线命名。skills 家族十四份 = 上游创作链四份（`_story` 口述情节→故事结构 / `_novel2story` 小说→故事结构（事件推进提取）/ `_screenplay` 故事→分集剧本 / `_script2shot` 剧本→拍片计划）+ transform 组（`_compile`/`_svg_preview`）+ adapter 组（`_seedance`）+ 记忆整理组（`_init_story`/四个 `_sync_*`/`_material`/`_correction`/`_sync_video_memory`）。rules 家族六份：`_workspace`（目录/配置契约）、`_sync_wiki` / `_sync_decision` / `_sync_taste` / `_material`（记忆四块判定规范，对齐 mesync rule=规范层形态）、`_correction`（纠错纪律）；出片底线（幂等/dry-run/预算）不单独成 rule（已代码硬闸 + 红线，防三处重复）。
 
 ## 工具面（契约，v1 已实现）
 
 | 工具 | 契约要点 |
 |---|---|
 | `video_init` | 建工作区/故事骨架：.dvd（skills/rules/tastes/db/config.json）+ story（.story 记忆层 + EP001 + AGENTS.md 总纲），skills/rules 航运资产幂等实例化，故事注册入库 |
-| `video_view` | 故事全景：overview + EP 进度 + 素材档案/纠错清单 + 最近决策 |
+| `video_view` | 故事全景：overview + story-structure（跨集结构）+ EP 进度（剧本/拍片计划标记）+ 素材档案/纠错清单 + 最近决策 |
 | `video_remember` | 记创作决策（决策链 caused_by/supersedes/taste_signals），落工作区库 |
 | `video_recall` | 召回决策：摘要列表（query/scope）或单条详情 |
 | `generate_shot` | 标准 JSON 校验（11 域）→ 两层转译预览 → dry_run 或提交：幂等（pending 拒重发）、预算硬闸（费率系数全计入）、（有 key 时）查真实余额、三份记录落盘；参数合并 shot > 工作区 config > 插件默认；attempts 追加 |

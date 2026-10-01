@@ -75,21 +75,22 @@ video-workspace/                  ← 视频工作区根
 - 载体：双面 md（front-matter 机器锚 + 正文 LLM 血肉），构建期导出 JSON Schema + spec lint 防漂移。
 - 装载：**静态航运**（随插件包，首日可用）+ **项目生长**（`.story/wiki` 长项目特有知识）。
 
-## 主工作闭环（compile_shot 收敛协议）
+## 主工作闭环（上游创作链 + compile_shot 收敛协议）
 
 ```
-① 具体度判定：具体输入（含量化镜头语）→ 直编译；模糊（情绪/感觉）→ 选项化
-② 记忆预筛：taste 高置信轴预填；corrections 历史坑转「约束区」默认项
-   —— 只问真的不确定，选项信号不浑浊
-③ 分层选项 ≤3 轮（卡片抽样，正交差异）：
-   轮1 感觉层（流派卡片组）→ 轮2 手法层 → 轮3 补缺层（声音/VFX 缺口才问）
-④ 确认卡：头图 SVG 构图预览 + 11 域取值清单（预填值标注来源）
-          + 素材登记区（共识门控）+ 约束区 + 成本预估
-⑤ 指哪改哪：单域重选，不动全局
-⑥ 确认 → 标准镜头语言 JSON → seeddance 出片
+① 粒度判定：整故事 / 单集 / 单镜头 —— 决定从哪一环进入
+② 故事层（整故事时）：口述情节 _story 或 小说 _novel2story（事件为单位提取）
+   → .story/story-structure.md（事件弧五段 + 分集计划）→ 用户确认
+③ 剧本层（单集）：_screenplay 四拍 + beat 表 → EP00N/script.md → 用户确认
+④ 拆镜层：_script2shot beat→shots + 每镜叙事目的/参考卡/11 域草案 → EP00N/plan.md → 用户确认
+⑤ 逐镜编译环（单镜头从此进入）：
+   具体度判定 → 记忆预筛（taste 高置信预填 + corrections 转约束）
+   → 分层选项 ≤3 轮（感觉→手法→补缺，卡片抽样正交差异）
+   → 确认卡（SVG 构图预览 + 11 域清单 + 素材登记区 + 约束区 + 成本预估）→ 出片
 ```
 
 - 每轮选择 = 卡片级品味信号回流；确认卡勾选 = 素材共识落盘。
+- **卡片库是转译词典**：剧本 beat 的情绪目标按 emotion_tags 检索手法卡，每个镜头都有叙事目的出身，不做炫技空镜。
 
 ## 提示词标准化与透明性
 
@@ -111,7 +112,7 @@ video-workspace/                  ← 视频工作区根
 - **注入面三块，全部文件驱动**：① **能力速览表**（常驻；读 `.dvd/capabilities.md`，缺失回退航运母版 `CAPABILITIES.md`——dvd 介绍 + 激活三态 + 11 轴/手法卡/组合包/7 工具/记忆五块/出片契约/红线整合一张表，用户可自行编辑调整）→ ② 心法总纲（故事 `AGENTS.md` 原文，缺失回退航运母版 `AGENT_TEMPLATE.md`）→ ③ Story Context 投影（overview/品味/进度/素材/纠错/决策动态数据）。
 - **提示词纪律**：插件代码**不写死任何注入提示词**——注入内容一律读文件（航运母版 / 工作区可编辑副本 / 故事文件）；用户改文件即改行为，不必改代码发版。
 - **心法静动分层**：静态（能力库 + skills + 速览表/总纲航运母版，随包）保证首日可用；动态（wiki/tastes/decisions/material/corrections 投影）保证越用越像你。
-- **skills 家族**：记忆整理组（sync wiki/taste/decision/correction）· transform 组（compile/确认卡/dry-run）· SVG 绘制规范组（取景框/运动箭头/光线符号、设定卡模板、配色约定）· adapter 组（转译句法、厂商最佳实践、计费表）。
+- **skills 家族**：上游创作链（`_story` 口述情节→故事结构 / `_novel2story` 小说→故事结构 / `_screenplay` 故事→分集剧本 / `_script2shot` 剧本→拍片计划）· transform 组（`_compile` 逐镜收敛/确认卡、`_svg_preview` 绘制规范）· adapter 组（`_seedance` 转译句法、厂商最佳实践、计费表）· 记忆整理组（sync wiki/taste/decision/correction + `_init_story`）。
 - **rules 家族**（判定与边界层，动手前先读）：`_workspace`（目录/配置契约）、`_sync_wiki` / `_sync_decision` / `_sync_taste` / `_material`（四块记忆的判定规范）、`_correction`（纠错纪律）。出片底线（幂等/dry-run/预算）不成 rule——已是代码硬闸 + 红线，避免三处重复漂移。
 
 ## API 调用与成本
@@ -123,9 +124,9 @@ video-workspace/                  ← 视频工作区根
 
 ## MVP 边界
 
-**v1 做**：单镜头生成（自然语言 → 镜头语言 → seeddance 出片）；三阶层能力库首批精样板（~15 卡 + 3–5 组合包）；11 域词汇；选项化 + 确认卡（SVG 预览 + 素材共识登记 + 成本预估）；提示词两层标准化 + 三份记录；纠错闭环；一个 adapter（seeddance）；本地 bundle 跑通。
+**v1 做**：上游创作链（故事结构 → 分集剧本 → 拍片计划三层心法，两输入源：口述情节/小说）；单镜头生成（自然语言 → 镜头语言 → seeddance 出片）；三阶层能力库首批精样板（~15 卡 + 3–5 组合包）；11 域词汇；选项化 + 确认卡（SVG 预览 + 素材共识登记 + 成本预估）；提示词两层标准化 + 三份记录；纠错闭环；一个 adapter（seeddance）；本地 bundle 跑通。
 
-**v2+ 暂缓**：多镜头连贯叙事 + 合成；material 一致性锁定（人物/场景跨镜头锁定）；照片级设定图（文生图 → 首尾帧）；品味自动升维；第二 adapter（小云雀）；项目技法回迁官方。
+**v2+ 暂缓**：多镜头连贯叙事 + 合成（plan 表结构已铺路）；material 一致性锁定（人物/场景跨镜头锁定）；照片级设定图（文生图 → 首尾帧）；品味自动升维；第二 adapter（小云雀）；项目技法回迁官方。
 
 ## 开发路线
 
@@ -133,6 +134,7 @@ video-workspace/                  ← 视频工作区根
 2. ~~doctrine：11 域词汇 schema + 精样板卡片 + 组合包~~ ✅ 已交付（11 轴 + 12 卡 + 3 组合包，front-matter 机器锚 + 装载器校验；JSON Schema 导出留批次二）
 3. ~~seeddance-adapter（转译/计价/错误映射）+ generate_shot 幂等实现~~ ✅ 已交付（占位计价表，决策 ID `83186e33`）
 4. ~~story init / 激活三态 / 确认卡 + SVG 渲染 + 素材登记~~ ✅ 骨架已交付（video_init + 速览表三态 + svg_render；确认卡由 Agent 按 `_compile.skill.md` 组织）
+5. 上游创作链 ✅ 心法已交付：`_story`（口述情节→故事结构）/ `_novel2story`（小说→故事结构，事件推进提取）/ `_screenplay`（故事结构→分集剧本）/ `_script2shot`（剧本→拍片计划）——两输入源汇合 `.story/story-structure.md`，产物 script.md/plan.md 落 EP00N；（实际创作验证待晚间功能测试）
 5. 全链路验证：模糊需求 → 出片 → 纠错回流（单元/冒烟已过；profile 挂载 + 真实出片待用户 dsh 环境）
 
 构建与测试：`npm i && npm run build && npm test`（40 单测全绿 + 构建内建模板复制与冒烟）。

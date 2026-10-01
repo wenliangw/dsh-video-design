@@ -1,6 +1,7 @@
 # video-workspace 层约定
 
 - 命名：EP001/EP002（机器可排序）、shots 内 S001/S002…（镜头记录 JSON 与 mp4 同名并列）。
+- **创作资产链（上游→出片）**：`.story/story-structure.md`（跨集：事件弧五段+分集计划，两个输入源的合流点）→ `EP00N/script.md`（本集四拍+beat 表，用户确认）→ `EP00N/plan.md`（beat→shots 映射，用户确认）→ `EP00N/shots/`（单镜三份记录+mp4）。上一环未确认，下一环不动工。
 - `.dvd/doctrine/` = 官方能力库参考副本（axes/cards/presets，Agent 读来选项化）；封闭轴硬校验走插件航运副本——改 `.dvd/doctrine` 里的卡片/轴值不影响 generate_shot 校验（要扩轴升插件版本）。
 - 素材 disclosure：`.story/material/<类型>/<实体>/{card.md, card.svg, refs/}`；类型 candidate：characters / scenes / props。
 - 资产不可重命名引用：已落盘 shot 的 index/episode 变更必须先 `video_remember` 记迁移决策再动文件。
