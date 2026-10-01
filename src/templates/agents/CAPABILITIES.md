@@ -61,7 +61,7 @@ dsh-video-design（dvd）是 dsh 视频创作插件：把自然语言编译成�
 
 ## 分层心法（按需读 `.dvd/skills/` 与 `.dvd/rules/`，具体操作不凭感觉）
 
-- 创作管线：`_story`（口述情节→故事结构）/ `_novel2story`（小说→故事结构）/ `_screenplay`（故事→分集剧本）/ `_script2shot`（剧本→拍片计划，key 连接）→ `_compile`（逐镜收敛协议）/ `_svg_preview`（绘制规范）/ `_seedance`（转译·计价·底线）
+- 创作管线：`_story`（口述情节→故事结构）/ `_novel2story`（小说→故事结构）/ `_screenplay`（故事→分集剧本）/ `_script2shot`（剧本→拍片计划，key 连接）→ `_compile`（逐镜收敛协议）/ `_svg_preview`（绘制规范）/ `_seedance`（转译·计价·底线）＋ `_seedance_config`（适配器配置引导：字段语义·官方文档查阅）
 - 官方能力库正文：`.dvd/doctrine/`（axes 11 轴 / cards 12 卡 / presets 3 包——compile 选项化从 cards/presets 抽样；封闭轴硬校验以插件航运为准）
 - 记忆五块：`_init_story` / `_sync_wiki` / `_sync_taste` / `_sync_decision` / `_material` / `_correction` ＋总览 `_sync_video_memory`
 - 规则（判定与边界，动手前对照）：`_workspace`（目录/配置契约）、`_sync_wiki` / `_sync_decision` / `_sync_taste` / `_material`（四块记忆判定规范）、`_correction`（纠错纪律）

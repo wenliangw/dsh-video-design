@@ -13,7 +13,7 @@
 - `.story/` = 记忆层：wiki（故事认知+项目沉淀手法）/ tastes（story 级品味）/ material（共识门控）/ corrections（因果纠错）；decisions 不在 .story，全量在 `.dvd/db/`。
 - `EP00N/` = 创作资产：`script.md`（本集剧本：四拍 + beat 表）、`plan.md`（拍片计划：beat→shots 映射表）、`shots/S001.json`（三份记录：shot 标准 JSON / vendor_prompt 厂商全文 / meta）+ `S001.mp4`；`video.mp4`（v2 合成）。
 - 跨集资产：`.story/story-structure.md`（完整故事结构：事件弧五段 + 分集计划——两个输入源的合流点）。
-- 上溯一级的 `.dvd/` = 工作区机制 + 审美底色（tastes）+ 行为配置（config.json）+ 官方能力库副本（doctrine/：axes/cards/presets，compile 选项化的抽样源）；`.dvd.config.json` = 适配器 API 凭证（多 adapter 按 name 对应，key 留空走环境变量）。
+- 上溯一级的 `.dvd/` = 工作区机制 + 审美底色（tastes）+ 行为配置（config.json）+ 官方能力库副本（doctrine/：axes/cards/presets，compile 选项化的抽样源）；`.dvd.config.json` = 适配器 API 配置（多 adapter 按 name 对应：apiKey 留空走环境变量；model 必须显式设置；新家族/Endpoint ID 需 family/caps 声明——配置引导见 `_seedance_config` 心法）。
 - 品味双级：工作区底色 → story 覆盖。
 
 ## 主工作闭环（一版片怎么拍出来）
@@ -29,7 +29,7 @@
 8. **纠错回流**：用户不满 → 归因 → 共识后落 `.story/corrections/`（记因果不记结果）。
 
 心法细节按需读 `.dvd/skills/`（怎么做）与 `.dvd/rules/`（判定与边界，动手前先读规则再读心法）：
-- 创作管线：`_story.skill.md`（口述情节→故事结构）/ `_novel2story.skill.md`（小说→故事结构）/ `_screenplay.skill.md`（故事→剧本）/ `_script2shot.skill.md`（剧本→拍片计划）→ `_compile.skill.md`（逐镜收敛协议）、`_svg_preview.skill.md`（绘制规范）、`_seedance.skill.md`（转译/计价/底线）
+- 创作管线：`_story.skill.md`（口述情节→故事结构）/ `_novel2story.skill.md`（小说→故事结构）/ `_screenplay.skill.md`（故事→剧本）/ `_script2shot.skill.md`（剧本→拍片计划）→ `_compile.skill.md`（逐镜收敛协议）、`_svg_preview.skill.md`（绘制规范）、`_seedance.skill.md`（转译/计价/底线）、`_seedance_config.skill.md`（适配器配置引导：字段语义 + 官方文档查阅）
 - 记忆五块：`_init_story.skill.md` / `_sync_wiki.skill.md`（wiki）、`_sync_taste.skill.md`（品味）、`_sync_decision.skill.md`（决策）、`_material.skill.md`（素材）、`_correction.skill.md`（纠错）＋总览 `_sync_video_memory.skill.md`
 - 规则：`_workspace.rule.md`（目录/配置契约）、`_sync_wiki.rule.md` / `_sync_decision.rule.md` / `_sync_taste.rule.md` / `_material.rule.md`（记忆判定规范）、`_correction.rule.md`（纠错纪律）
 
@@ -41,8 +41,8 @@
 
 1. **共识门控**：人物/场景/服化道设定必须有用户确认才落 `.story/material/`；未确认的设定永不进档案。
 2. **幂等出片**：同 shot 有 pending 任务不得重复提交（官方明示重复 POST 会开第二个任务）。
-3. **dry-run 先行**：真提交前必须展示完整厂商 prompt + 积分预估；预算闸超限不得硬闯。
-4. **成本即责任**：seeddance 是积分计费的真金白银——确认卡明码标价，无谓的生成建议先打折。
+3. **dry-run 先行**：真提交前必须展示完整厂商 prompt + 成本预估；预算闸超限不得硬闯。
+4. **成本即责任**：seeddance 按元计费的真金白银——确认卡明码标价，无谓的生成建议先打折。
 5. **纠错记因果**：不记「崩了」，记「为什么崩、下次怎么避开」。
 6. **凭证保密**：`.dvd.config.json` 默认已被 gitignore——绝不把用户 API 信息提交远端仓库；除非用户自己移出 ignore（= 明确要共享），此时也不得代用户改回。
 
