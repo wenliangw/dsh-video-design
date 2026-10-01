@@ -13,7 +13,7 @@
 - `.story/` = 记忆层：wiki（故事认知+项目沉淀手法）/ tastes（story 级品味）/ material（共识门控）/ corrections（因果纠错）；decisions 不在 .story，全量在 `.dvd/db/`。
 - `EP00N/` = 创作资产：`script.md`（本集剧本：四拍 + beat 表）、`plan.md`（拍片计划：beat→shots 映射表）、`shots/S001.json`（三份记录：shot 标准 JSON / vendor_prompt 厂商全文 / meta）+ `S001.mp4`；`video.mp4`（v2 合成）。
 - 跨集资产：`.story/story-structure.md`（完整故事结构：事件弧五段 + 分集计划——两个输入源的合流点）。
-- 上溯一级的 `.dvd/` = 工作区机制 + 审美底色（tastes）+ 行为配置（config.json）+ 官方能力库副本（doctrine/：axes/cards/presets，compile 选项化的抽样源）；`.dvd.config.json` = 适配器 API 配置（多 adapter 按 name 对应：apiKey 留空走环境变量；model 必须显式设置；新家族/Endpoint ID 需 family/caps 声明——配置引导见 `_seedance_config` 心法）。
+- 上溯一级的 `.dvd/` = 工作区机制 + 审美底色（tastes）+ 行为配置（config.json）+ 官方能力库副本（doctrine/：axes/cards/presets，compile 选项化的抽样源）；`.dvd.config.json` = 适配器 API 配置（多 adapter 按 name 对应：apiKey 留空走环境变量；model 必须显式设置；caps 四字段必须声明——契约零内置家族能力，配置引导见 `_seedance_config` 心法）。
 - 品味双级：工作区底色 → story 覆盖。
 
 ## 主工作闭环（一版片怎么拍出来）

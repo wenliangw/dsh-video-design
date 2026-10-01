@@ -392,7 +392,7 @@ export function registerTools(ctx: Context, config: Config): void {
 
       const isDry = args.dry_run === true || !apiKey
 
-      // ---- reference_urls 校验：数组 + 公网 HTTPS + 张数上限（按模型家族，读 api.json 契约） ----
+      // ---- reference_urls 校验：数组 + 公网 HTTPS + 张数上限（按用户 caps 声明） ----
       let referenceUrls: string[] = []
       try {
         const parsed = args.reference_urls ? JSON.parse(args.reference_urls) : []

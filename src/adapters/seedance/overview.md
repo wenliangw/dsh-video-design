@@ -1,6 +1,6 @@
 # seedance 适配器契约总览（人类可读面）
 
-> 本文件是 `api.json` 的人类可读依据；`api.json` 是本文件的机器面提取，代码运行时读取（地址/路径/入参标准/上限/状态词不写死在代码里）。
+> 本文件是 `api.json` 的人类可读依据；`api.json` 是本文件的机器面提取，代码运行时读取（地址/路径/通用默认值/状态词/错误语义不写死在代码里）。**按模型/家族区分的能力事实不进机面**——一律由用户在 `.dvd.config.json` 用 caps 声明，本文件「模型家族」表只作人面参考。
 > 契约与更新流程见 `../README.md`。
 
 ## 来源与核对
@@ -46,7 +46,7 @@
 
 ### 当前在售版本（2026-10-02 交叉核对，以方舟控制台 model-list 为准）
 
-官方 model-list 页需登录，本表由两个方舟官方兼容源交叉核对（[亿速云 Seedance 2.x 文档](http://www.yisu.com/help/ai_docs/video-api/api-capabilities/seedance_2x.html) 的上游模型 ID 表 + [apifox 官方格式接口页](https://gpt-best.apifox.cn/api-510675713)）。**插件不内置默认模型，用户必须显式配置 model**（`.dvd.config.json` 的 `adapters[].model`，或 `SEEDANCE_MODEL` 环境变量）——任意方舟版本化 ID 都按前缀解析家族直接可用，不需插件发版；本表只作「当前在售是什么」的选择参考。本表仅存于本文档（人面参考），**不进 api.json 机器面**——机器面 `models` 段只有前缀解析表（行为事实），本表是会过期的时效资讯：过期只算文档失真（以方舟控制台 model-list 为准），不构成插件被迫发版的理由。选择指引：求快求省选 2-0-fast（分辨率上限 720p）；要 1080p 选 2.0 基座；4k/长时长/全模态参考选 2.5。
+官方 model-list 页需登录，本表由两个方舟官方兼容源交叉核对（[亿速云 Seedance 2.x 文档](http://www.yisu.com/help/ai_docs/video-api/api-capabilities/seedance_2x.html) 的上游模型 ID 表 + [apifox 官方格式接口页](https://gpt-best.apifox.cn/api-510675713)）。**插件不内置默认模型，用户必须显式配置 model**（`.dvd.config.json` 的 `adapters[].model`，或 `SEEDANCE_MODEL` 环境变量）——任意方舟版本化 ID / Endpoint ID 一律原样透传，能力由用户 caps 声明，不需插件发版；本表只作「当前在售是什么」的选择参考。本表仅存于本文档（人面参考），**不进 api.json 机器面**（机器面已无 `models` 段——不内置任何按模型/家族区分的事实）：本表是会过期的时效资讯，过期只算文档失真（以方舟控制台 model-list 为准），不构成插件被迫发版的理由。选择指引：求快求省选 2-0-fast（分辨率上限 720p）；要 1080p 选 2.0 基座；4k/长时长/全模态参考选 2.5。
 
 | 家族 | 当前在售版本 ID | 分辨率上限 |
 |---|---|---|
@@ -55,7 +55,7 @@
 | Seedance 2.0 fast | `doubao-seedance-2-0-fast-260128` | 480p/720p |
 | Seedance 2.0 mini | `doubao-seedance-2-0-mini-260615` | 480p/720p |
 
-> 旧示例 ID `doubao-seedance-1-0-pro-250528` 已过时，仅作 1.0 家族前缀解析的历史样例保留在代码测试中，不用于默认配置。
+> model 一律原样透传（无前缀/家族解析），能力由用户 caps 声明；上表在售 ID 仅作选择参考，以方舟控制台 model-list 为准。
 
 ## 请求入参（标准）
 

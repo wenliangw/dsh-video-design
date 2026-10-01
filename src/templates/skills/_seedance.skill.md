@@ -20,15 +20,15 @@
 - **厂商层（翻译稿）**：content 数组首条 `{type:'text'}` 收**单一自然语言字符串**，无分段语法。单窗合句；多窗「前 N 秒…随后…」。
 - 参考图模式附「真实摄影质感，电影级光影」类提示压图纸感。
 
-## 2. 参数红线（以 api.json 契约为准，此处是使用摘要）
+## 2. 参数红线（以 overview.md 人面 + api.json 机面契约为准，此处是使用摘要）
 
 - **model 无内置默认**：用户必须显式配置——`.dvd.config.json` 的 `adapters[].model`（或环境变量 `SEEDANCE_MODEL`）；未设置时 generate_shot 拒绝并指引，不得代编模型 ID。model 纯透传：版本化 ID / Endpoint ID 一律原样发出，客户端不做前缀/家族解析。当前在售版本见 overview「当前在售版本」表（人面参考）。
 - **家族能力完全配置化（契约零内置）**：api.json **不内置任何按模型/家族区分的事实**——时长范围、参考图上限、generate_audio 策略全部由用户在 `.dvd.config.json` 该 adapter 条目的 `caps` 四字段声明（durationRange / maxReferenceImages / maxFirstLastFrame / generateAudio），四字段必填、缺项 generate_shot 显式拒绝并给可复制模板；`family` 可选，仅作显示标签。声明即用、无需发版，插件发版只跟 API 形态变化走。generateAudio 取值 `explicit-false`（家族支持参数→恒发 false 守无声承诺）/ `omit`（不支持→字段不携带）。
 - **duration**：按用户 caps.durationRange clamp 后恒显式传值（官方 `-1`=模型自选，v1 不用）；caps 未声明时 generate_shot 在转译前即拒绝。
 - **resolution**：480p/720p/1080p/4k；v1 客户端只发 480/720/1080 三档，各模型支持上限以方舟 model-list 为准——越界靠服务端校验错误透明呈现，客户端不预判。
 - **ratio**：16:9/4:3/1:1/3:4/9:16/21:9/adaptive。
-- **参考图（content 的 image_url role）**：1 张=首帧 `first_frame`；2 张=首尾帧；3+ 张或 reference_mode=true=参考图 `reference_image`。参考图仅 2.5（≤30 张）/ 2.0 系列（≤9 张）；1.0 pro 仅首尾帧（≤2 张）、1.0 pro fast 仅首帧 1 张。图片只收公网 HTTPS（jpeg/png/webp/bmp/tiff/gif；2.0+ 另 heic/heif），边长 300–6000px、宽高比 0.4–2.5、<30MB。
-- **generate_audio**：官方 2.5/2.0 系列默认 true（有声）。**v1 政策：恒显式 false 保持无声承诺**；1.0 系列不携带该字段。将来开放有声是功能决策，不与官方默认绑定。
+- **参考图（content 的 image_url role）**：1 张=首帧 `first_frame`；2 张=首尾帧；3+ 张或 reference_mode=true=参考图 `reference_image`。**张数上限一律按用户 caps 声明校验**（maxReferenceImages / maxFirstLastFrame），契约不内置家族数字；参考值见 overview「模型家族」表。图片只收公网 HTTPS（jpeg/png/webp/bmp/tiff/gif；2.0+ 另 heic/heif），边长 300–6000px、宽高比 0.4–2.5、<30MB。
+- **generate_audio**：官方默认 true（有声），**v1 政策：按用户 caps.generateAudio 声明执行**——`explicit-false` 恒显式 false 守无声承诺；`omit` 不携带字段（家族无此参数）。将来开放有声是功能决策，不与官方默认绑定。
 - **watermark**：默认 false，客户端恒显式携带。
 - **无 content_filter 参数**（那是过时国际站契约）；**无 reference_mode 请求字段**（方舟用 role 表达），config.referenceMode 只是插件内 roi 分配语义触发器。
 - **重复 POST = 第二个任务**：generate_shot 已做 record 幂等 + 进程内互斥，Agent 不绕过工具手动重发。

@@ -121,7 +121,10 @@ export function resolveCapabilities(
   label: string,
   caps?: CapsOverride,
 ): { caps: FamilyCaps | null; error: string | null } {
-  const dr = caps?.durationRange
+  if (!caps) {
+    return { caps: null, error: capsRequiredError(label, 'caps 整体（durationRange / maxReferenceImages / maxFirstLastFrame / generateAudio 四项必填）') }
+  }
+  const dr = caps.durationRange
   if (!Array.isArray(dr) || dr.length !== 2 || typeof dr[0] !== 'number' || typeof dr[1] !== 'number') {
     return { caps: null, error: capsRequiredError(label, 'durationRange（[最短秒, 最长秒]）') }
   }
