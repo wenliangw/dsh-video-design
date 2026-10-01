@@ -22,10 +22,11 @@
 
 ## 每镜定轴顺序（固定，不许跳步）
 
-1. **叙事目的**：一句话——这镜观众必须收到什么信息/情绪。
-2. **情绪标签** → 检索手法卡：直接 read `.dvd/doctrine/cards/` 与 `.dvd/doctrine/presets/`，按 front-matter `emotion_tags` 匹配（同标签多卡时取正交差异的 2–4 张做候选，交给 compile 选项化）。
-3. **11 域草案 + 时间窗**：size/angle/movement/composition/lighting/color/pacing/format 封闭轴从卡片 recipe 起步 + 按叙事目的微调；sound/vfx/performance 沿用 beat 的标注。beat「场景」栏的时间信息转录为各镜「时间窗」标注——同场景跨镜时间窗必须一致（剧情内时间流动才允许变化，并在 plan 注明）。
-4. 草案是「出处明确的初值」，最终值走 compile 收敛协议（用户指哪改哪）。
+1. **四要素基础卡（shot.foundation）**：时间/空间/人物/事件——先定几何再写词（规范读 `.dvd/doctrine/foundation.md`）。方向词纪律：先世界后屏幕——「沿路走」必须先知道路在画内是纵深（depth）还是横铺（lateral）；「画面左/右」只是投影描述，禁止裸屏幕方向词。道路走向×动线冲突、人物画面位缺失会被 `generate_shot` 硬拦。
+2. **叙事目的**：一句话——这镜观众必须收到什么信息/情绪。
+3. **情绪标签** → 检索手法卡：直接 read `.dvd/doctrine/cards/` 与 `.dvd/doctrine/presets/`，按 front-matter `emotion_tags` 匹配（同标签多卡时取正交差异的 2–4 张做候选，交给 compile 选项化）。
+4. **11 域草案 + 时间窗**：size/angle/movement/composition/lighting/color/pacing/format 封闭轴从卡片 recipe 起步 + 按叙事目的微调；sound/vfx/performance 沿用 beat 的标注。beat「场景」栏的时间信息转录为各镜「时间窗」标注——同场景跨镜时间窗必须一致（剧情内时间流动才允许变化，并在 plan 注明）。
+5. 草案是「出处明确的初值」，最终值走 compile 收敛协议（用户指哪改哪）。
 
 ### sound 域的诚实口径
 
@@ -37,14 +38,16 @@
 - 180° 轴线不破（对话/追逐）；破线 = 明确意图（阵营翻转/时空切换）并在 plan 标注。
 - 相邻景别跳档 ≤2（建立→中→特「LS→CU」可，「LS→ECU」不可无因）。
 - 主体词全部来自固定表（表外描述 = 过检失败）。
+- 人物画面位（`characters[].position.screen`）跨镜一致：写死的画左/画右继承自上一镜的 foundation 卡；换位必须解释世界原因（绕行/换位），禁止静默翻转。
 
 ## plan.md 形态（一屏可扫的映射表）
 
 顶部 = 主体词固定表；正文表列：
 
-| beat | 镜号(S00N) | 叙事目的 | 参考卡 | 11 域草案+时间窗 | 时长 |
+| beat | 镜号(S00N) | 四要素卡（时间/空间/人物/事件） | 叙事目的 | 参考卡 | 11 域草案+时间窗 | 时长 |
 |---|---|---|---|---|---|
 
+- **四要素卡列**：每镜写 foundation 摘要（time.period / roadDirection+screenPath / 人物 id+画面位 / 事件序列），与 generate_shot 入参的 `shot.foundation` 同源，禁止漂移。
 - **镜号 = `S00N`**，与 `EP00N/shots/S00N.json` 一一对应（机器可排序，命名规则见 `_workspace.rule.md`——后续重拍/加镜就顺号加，不重排）。
 - 整体过用户确认一次（拍片计划是「这一集怎么拍」的共识），然后逐镜 compile。
 

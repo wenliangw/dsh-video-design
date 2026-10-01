@@ -6,6 +6,8 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 
+import { renderFoundation, type Foundation } from './foundation.js'
+
 export interface ShotJSON {
   shot: {
     index: string
@@ -16,6 +18,8 @@ export interface ShotJSON {
     windows?: { from: string; to: string; movement: string }[]
     axes: Record<string, string>
     cards?: string[]
+    /** 四要素基础卡（时间/空间/人物/事件）——每镜必填的「拍什么」地基，校验规则读 doctrine/foundation.md */
+    foundation?: Foundation
   }
   prompt_text?: string
   constraints?: { avoid?: string[]; negatives?: string[] }
@@ -182,6 +186,8 @@ export function buildVendorPrompt(shot: ShotJSON, opts: { photographic?: boolean
   } else {
     text = subject + (windows?.length ? '，' + windows[0].movement : '')
   }
+  // 四要素基础卡先于拍法入 prompt：世界信息（时间/空间/人物位/事件）先立，轴值描述随后
+  if (shot.shot.foundation) text += '；' + renderFoundation(shot.shot.foundation)
   const extras: string[] = []
   const zh = new Map<string, string>([
     ['size', '景别'], ['angle', '机位'], ['movement', '运镜'], ['composition', '构图'],

@@ -21,6 +21,7 @@ import {
   resolveCapabilities,
   type ShotJSON, type ShotRecord, type CapsOverride,
 } from '../adapters/seedance/seedance.js'
+import { validateFoundation, foundationTemplate, renderFoundation } from '../adapters/seedance/foundation.js'
 import {
   resolveAdapter, describeAdapters, SUPPORTED_ADAPTERS, DEFAULT_ADAPTER,
 } from '../adapters/registry.js'
@@ -334,7 +335,7 @@ export function registerTools(ctx: Context, config: Config): void {
       'dry_run=true 或无 API key 时只返回转译+计价预览（不花钱、不落盘）；' +
       '否则提交生成（幂等：同 shot 有未完成任务时拒绝重复提交）并把三份记录落盘。',
     parameters: {
-      shot_json: { type: 'string', required: true, description: '标准镜头语言 JSON 原文。必填：shot.subject（主体与动作）、shot.index（如 S001）、shot.axes（11 域轴值 map：size/angle/movement/composition/lighting/color/pacing/sound/format/vfx/performance）。可选：shot.shot.duration（秒，2–30，缺失用工作区/插件默认）、shot.windows（[{from,to,movement}] 时间窗）、shot.cards（手法卡片 id 数组）、constraints、materials、meta。' },
+      shot_json: { type: 'string', required: true, description: '标准镜头语言 JSON 原文。必填：shot.subject（主体与动作）、shot.index（如 S001）、shot.axes（11 域轴值 map：size/angle/movement/composition/lighting/color/pacing/sound/format/vfx/performance）。必填：shot.foundation（四要素基础卡：时间/空间/人物/事件，校验规则见 doctrine/foundation.md——缺卡或道路走向×动线冲突会被硬拦）。可选：shot.shot.duration（秒，2–30，缺失用工作区/插件默认）、shot.windows（[{from,to,movement}] 时间窗）、shot.cards（手法卡片 id 数组）、constraints、materials、meta。' },
       dry_run: { type: 'boolean', description: 'true 只校验+转译+计价不提交（默认：无 key 时强制 true）' },
       adapter: { type: 'string', description: `adapter 名（对应工作区 .dvd.config.json 里 adapters[].name）；默认 ${DEFAULT_ADAPTER}（v1 仅 seedance）` },
       reference_urls: { type: 'string', description: 'JSON 数组：可公开访问的 HTTPS 图片 URL（jpeg/png/webp/bmp/tiff/gif；2.0+ 另支持 heic/heif）。role 自动分配：1 张=首帧（first_frame）、2 张=首尾帧、3+ 张或 reference_mode=true=参考图（reference_image）。参考图仅 2.5（上限 30 张）/ 2.0 系列（上限 9 张）；1.0 系列仅支持首/尾帧（pro 2 张、fast 1 张）。' },
@@ -362,6 +363,13 @@ export function registerTools(ctx: Context, config: Config): void {
       const axes = loadAxes()
       const errors = validateAxes(shot.shot.axes, axes)
       if (errors.length > 0) return '轴值校验失败：\n' + errors.map(e => `- ${e}`).join('\n')
+
+      // ---- 四要素基础卡硬校验（时间/空间/人物/事件 = 每镜「拍什么」地基；规则读 doctrine/foundation.md，机制零写死） ----
+      const foundationErrors = validateFoundation(shot.shot.foundation)
+      if (foundationErrors.length > 0) {
+        return '四要素基础卡校验失败（时间/空间/人物/事件——每镜必填的「拍什么」地基；缺失会让方向词失去世界语义）：\n'
+          + foundationErrors.map(e => `- ${e}`).join('\n') + '\n可复制模板：\n' + foundationTemplate()
+      }
 
       // ---- 适配器解析（.dvd.config.json 按 name 对应；文件 apiKey 优先，环境变量兜底） ----
       const wsCfg = vctx.workspaceRoot ? loadWorkspaceConfig(vctx.workspaceRoot) : {}
@@ -432,6 +440,7 @@ export function registerTools(ctx: Context, config: Config): void {
         `**标准层（可倒解析回 11 域）**：${buildStandardSentence(shot)}`,
         `**厂商层（${adapterName} prompt 全文）**：${plan.vendorPrompt}`,
         `**参数**：adapter=${adapterName}｜family=${plan.family}（caps 用户声明）｜model=${plan.model}｜duration=${plan.duration}s｜resolution=${plan.resolution}｜ratio=${plan.ratio}${plan.body.generate_audio === false ? '｜generate_audio=false（v1 无声承诺）' : ''}`,
+        `**四要素卡（拍什么地基）**：${renderFoundation(shot.shot.foundation!)}`,
         referenceUrls.length ? `**参考图**：${referenceUrls.length} 张，role=${plan.referenceRoles.join('/')}` : '**参考图**：无（纯文生视频）',
         `**成本预估**：${cost.pricingNote}`,
       ]
