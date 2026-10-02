@@ -11,7 +11,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import {
   createGeneration, getTask, isTerminal, downloadVideo, saveFile, buildBody, buildQueryUrl,
 } from '../adapters/seedance/seedance.js'
-import { resolveConfig, queryUrlError } from '../workspace/config.js'
+import { resolveConfig, queryUrlError, envWorkspace } from '../workspace/config.js'
 
 /** 实验记录文件顶部目录名 */
 const EXPERIMENTS_DIR = 'experiments'
@@ -50,9 +50,24 @@ export function sessionWorkspace(ctx: Context, exec: unknown): string | null {
   }
 }
 
-/** 工具目录锚点：会话工作区优先（用户工作区），拿不到再回退进程 cwd（测试/直调/无会话场景） */
-function anchorOf(ctx: Context, exec: unknown): string {
-  return sessionWorkspace(ctx, exec) ?? process.cwd()
+/**
+ * 工具目录锚点（优先级从高到低）：
+ * 1. SEEDANCE_WORKSPACE 环境变量——用户显式指定的固定视频工作区，任何项目会话里都命中；
+ * 2. 会话工作区（dsh 会话创建时的工作目录）——在视频工作区开会话时自然命中；
+ * 3. 进程启动目录（测试/直调/无会话兜底）。
+ */
+export function resolveAnchor(ctx: Context, exec: unknown): { dir: string; source: 'env' | 'session' | 'process' } {
+  const env = envWorkspace()
+  if (env) return { dir: env, source: 'env' }
+  const sess = sessionWorkspace(ctx, exec)
+  if (sess) return { dir: sess, source: 'session' }
+  return { dir: process.cwd(), source: 'process' }
+}
+
+const ANCHOR_SOURCE_LABEL: Record<'env' | 'session' | 'process', string> = {
+  env: '环境变量 SEEDANCE_WORKSPACE 指向',
+  session: '会话工作区',
+  process: '进程启动目录（兜底）',
 }
 
 /** 实验记录（三处事实：这镜怎么提的、发给了哪个模型哪个地址、结果在哪 + 人工验收标签） */
@@ -108,15 +123,18 @@ function findRecordByTask(root: string, taskId: string): ExperimentRecord | null
 }
 
 /** 配置缺失 → 可操作中文报错（不给任何内置默认值，只指路） */
-function configError(missing: string[], corrupt: Error | null, configFile: string | null, startDir: string): string | undefined {
+function configError(missing: string[], corrupt: Error | null, configFile: string | null, startDir: string, sourceLabel: string): string | undefined {
   if (corrupt) return `${configFile} 存在但 JSON 损坏：${corrupt.message}——修复后再试。`
   if (!missing.length) return undefined
   const items = missing.map(k => `- ${k}`).join('\n')
   const where = configFile
     ? `${configFile} 已读到，但缺以下字段：`
-    : `已从 ${startDir} 向上逐级查找 .dvd.config.json，未找到。文件应包含：{ "apiKey": "...", "model": "...", "createUrl": "创建任务的完整 API 地址", "queryUrl": "查询任务的完整 API 地址模板（含 {task_id} 占位符）" }`
+    : `已从 ${startDir}（${sourceLabel}）向上逐级查找 .dvd.config.json，未找到。文件应包含：{ "apiKey": "...", "model": "...", "createUrl": "创建任务的完整 API 地址", "queryUrl": "查询任务的完整 API 地址模板（含 {task_id} 占位符）" }`
+  const hints = configFile ? '' : '\n若这个起点不是你放配置的目录（比如你在别的项目会话里调用本工具）：\n' +
+    ' - 设置环境变量 SEEDANCE_WORKSPACE=<你的视频工作区绝对路径>，此后所有会话固定从那里找配置、落实验记录；\n' +
+    ' - 或直接在视频工作区对应的目录里开 dsh 会话再调用本工具。'
   return `缺少用户配置（插件不内置任何模型/地址事实，缺什么只列什么）：\n${items}\n${where}\n` +
-    '上述四项也可分别用环境变量 SEEDANCE_API_KEY / SEEDANCE_MODEL / SEEDANCE_CREATE_URL / SEEDANCE_QUERY_URL 提供（密钥推荐走环境变量，不进文件）。'
+    '上述四项也可分别用环境变量 SEEDANCE_API_KEY / SEEDANCE_MODEL / SEEDANCE_CREATE_URL / SEEDANCE_QUERY_URL 提供（密钥推荐走环境变量，不进文件）。' + hints
 }
 
 export function registerTools(ctx: Context): void {
@@ -138,9 +156,9 @@ export function registerTools(ctx: Context): void {
       render: (_args: any, value: any) => [{ type: 'text', text: value }],
     },
     async execute(args: { prompt: string; label?: string; extra?: string; dry_run?: boolean }, exec: unknown) {
-      const anchor = anchorOf(ctx, exec)
+      const { dir: anchor, source } = resolveAnchor(ctx, exec)
       const cfg = resolveConfig(anchor)
-      const cfgErr = configError(cfg.missing, cfg.corrupt, cfg.file, anchor)
+      const cfgErr = configError(cfg.missing, cfg.corrupt, cfg.file, anchor, ANCHOR_SOURCE_LABEL[source])
       if (cfgErr) return cfgErr
 
       const queryErr = queryUrlError(cfg.queryUrl!)
@@ -214,7 +232,7 @@ export function registerTools(ctx: Context): void {
       render: (_args: any, value: any) => [{ type: 'text', text: value }],
     },
     async execute(args: { task_id: string; label?: string }, exec: unknown) {
-      const anchor = anchorOf(ctx, exec)
+      const { dir: anchor } = resolveAnchor(ctx, exec)
       const cfg = resolveConfig(anchor)
       if (!cfg.apiKey || !cfg.queryUrl) {
         return `缺少配置（apiKey/queryUrl），没法查询。${cfg.missing.length ? '当前缺：' + cfg.missing.join('、') : ''}`

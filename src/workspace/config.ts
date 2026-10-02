@@ -17,6 +17,15 @@ export const ENV_API_KEY = 'SEEDANCE_API_KEY'
 export const ENV_MODEL = 'SEEDANCE_MODEL'
 export const ENV_CREATE_URL = 'SEEDANCE_CREATE_URL'
 export const ENV_QUERY_URL = 'SEEDANCE_QUERY_URL'
+/** 可选锚点通道：固定视频工作区绝对路径（跨项目会话生效；不设置则用会话工作区/进程目录） */
+export const ENV_WORKSPACE = 'SEEDANCE_WORKSPACE'
+
+/** 读 SEEDANCE_WORKSPACE：用户显式指定的视频工作区（绝对路径化；未设置/空 → null） */
+export function envWorkspace(): string | null {
+  const v = process.env[ENV_WORKSPACE]
+  if (!v || v.trim() === '') return null
+  return path.resolve(v.trim())
+}
 
 export interface VideoUserConfig {
   apiKey?: string
