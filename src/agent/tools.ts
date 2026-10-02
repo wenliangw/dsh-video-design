@@ -127,7 +127,8 @@ export function registerTools(ctx: Context): void {
     description: 'v2 最小核：把一段纯文本提示词直送用户配置的视频生成模型，发起一次真实生成（花钱）。' +
       '插件不内置任何模型/地址事实——模型、API Key、完整请求地址全部来自用户配置（.dvd.config.json 或环境变量）。' +
       '插件不做校验/转译/计价：提示词一字不改直达模型，费用以后台账单为准。' +
-      '每次提交落一条实验记录（experiments/<label>.json），无 API Key 或 dry_run=true 时只预览请求体、不发起。',
+      '每次提交落一条实验记录（experiments/<label>.json），无 API Key 或 dry_run=true 时只预览请求体、不发起。' +
+      '起草提示词前必须先加载 skill video-shot-prompt 并按它的自检清单逐项自查。',
     parameters: {
       prompt: { type: 'string', required: true, description: '纯文本提示词，原样直送模型（v2 无转译层，怎么写就怎么送）' },
       label: { type: 'string', description: '实验标签（字母/数字/下划线/连字符，如 h0-simple-25-r1）；缺省自动生成 shot-时间戳' },

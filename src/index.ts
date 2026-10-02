@@ -9,10 +9,12 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { registerTools } from './agent/tools.js'
+import { registerPromptSkill } from './agent/skills.js'
 
 export const name = 'dsh-video-design'
-export const inject = ['tools']
+export const inject = ['tools', 'skills']
 
 export function apply(ctx: Context) {
   registerTools(ctx)
+  registerPromptSkill(ctx) // 插件自带能力：给 agent 的提示词编写心法（skill 目录可见）
 }

@@ -31,10 +31,12 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-skill": "*",
     "@deepseek-ai/dsh-tools": "*"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-skill": "*",
     "@deepseek-ai/dsh-tools": "*",
     "@types/node": "^22.0.0",
     "typescript": "^5.5.0",
