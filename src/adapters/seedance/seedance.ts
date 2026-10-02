@@ -74,7 +74,12 @@ export async function createGeneration(opts: {
   return { task_id: String(id), status: 'pending' }
 }
 
-/** 查询任务：GET 用户配置的 queryUrl 模板（{task_id} 已替换） */
+/** 把用户 queryUrl 模板里的 {task_id} 替换为真实任务 ID（其余部分原样保留，不拼任何路径） */
+export function buildQueryUrl(template: string, taskId: string): string {
+  return template.replaceAll('{task_id}', encodeURIComponent(taskId))
+}
+
+/** 查询任务：GET 用户配置的 queryUrl 模板替换后的完整地址 */
 export async function getTask(opts: {
   queryUrl: string
   apiKey: string

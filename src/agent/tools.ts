@@ -9,7 +9,7 @@ import * as path from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import {
-  createGeneration, getTask, isTerminal, downloadVideo, saveFile, buildBody,
+  createGeneration, getTask, isTerminal, downloadVideo, saveFile, buildBody, buildQueryUrl,
 } from '../adapters/seedance/seedance.js'
 import { resolveConfig, queryUrlError } from '../workspace/config.js'
 
@@ -198,7 +198,7 @@ export function registerTools(ctx: Context): void {
       const existing = findRecordByTask(root, args.task_id)
       const label = safeLabel(args.label ?? existing?.label ?? args.task_id.replace(/[^A-Za-z0-9_-]/g, '-'))
 
-      const queryUrl = cfg.queryUrl.replace('{task_id}', encodeURIComponent(args.task_id))
+      const queryUrl = buildQueryUrl(cfg.queryUrl, args.task_id)
       const st = await getTask({ queryUrl, apiKey: cfg.apiKey })
 
       if (st.status === 'pending') {
