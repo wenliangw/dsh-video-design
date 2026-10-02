@@ -1,7 +1,7 @@
 {
   "name": "dsh-video-design",
-  "version": "0.1.0",
-  "description": "dsh 视频创作插件（dsh-Video-Design，简称 dvd）—— 自然语言 → 专业镜头语言 → seeddance 出片，携工作区/故事记忆越用越懂你",
+  "version": "2.0.0-alpha.0",
+  "description": "dsh 视频创作插件 v2（分步验证最小核）：纯提示词直送模型、插件零内置模型事实、模型/API/地址全由用户配置",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -15,10 +15,6 @@
     "lib/index.js",
     "lib/**/*.js",
     "lib/types/**/*.d.ts",
-    "lib/templates/**/*.md",
-    "lib/templates/**/*.json",
-    "lib/adapters/**/*.md",
-    "lib/adapters/**/*.json",
     "cordis.patch.yml",
     "README.md"
   ],
@@ -28,32 +24,19 @@
     }
   },
   "scripts": {
-    "build": "node scripts/copy-assets.mjs && tsc -b",
+    "build": "tsc -b",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "clean": "rm -rf lib *.tsbuildinfo"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "*",
-    "@deepseek-ai/dsh-agent": "*",
-    "@deepseek-ai/dsh-llm": "*",
-    "@deepseek-ai/dsh-session": "*",
-    "@deepseek-ai/dsh-system-prompt": "*",
     "@deepseek-ai/dsh-tools": "*"
-  },
-  "dependencies": {
-    "@deepseek-ai/schemastery": "*",
-    "better-sqlite3": "^12.11.1",
-    "js-yaml": "^4.2.0",
-    "sharp": "^0.33.5"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "*",
     "@deepseek-ai/dsh-tools": "*",
-    "@deepseek-ai/dsh-system-prompt": "*",
     "@types/node": "^22.0.0",
-    "@types/better-sqlite3": "^9.6.0",
-    "@types/js-yaml": "^4.0.9",
     "typescript": "^5.5.0",
     "vitest": "^2.1.9"
   },

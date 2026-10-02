@@ -1,6 +1,0 @@
-{
-  "//说明": "适配器 API 配置：adapters[].name 对应客户端（v1 支持 seedance = 火山方舟 Doubao-Seedance）。apiKey 留空时回退读环境变量（SEEDANCE_API_KEY / <NAME大写>_API_KEY）。含密钥——初始化时已默认写入工作区根 .gitignore，请勿提交远端，除非你明确要共享它。baseUrl 覆盖链：本文件 > 环境变量 SEEDANCE_BASE_URL > 契约默认（src/adapters/seedance/api.json）。\nmodel 必填且无内置默认（模型版本更迭快，插件不为模型改版发版）：填你方舟账号开通的版本化 Model ID 或 Endpoint ID，留空时可回退环境变量 SEEDANCE_MODEL。\n家族能力 100% 由你声明——插件契约不内置任何按模型/家族区分的事实（不代编、不过期、不随官方更新发版）。每个 adapter 条目必须补 caps 四字段，声明即用：\"caps\": { \"durationRange\": [4, 15], \"maxReferenceImages\": 9, \"maxFirstLastFrame\": 2, \"generateAudio\": \"explicit-false\" }（durationRange=时长范围秒 [最短,最长]；maxReferenceImages=参考图上限张数，不支持填 0；maxFirstLastFrame=首尾帧上限张数；generateAudio=explicit-false 家族支持该参数/v1 恒发 false 守无声承诺，omit 家族不支持该参数/请求不携带）。可选 \"family\": \"2.5\" 仅作 family 显示标签。各家族能力参考值见 src/adapters/seedance/overview.md「模型家族」表（人面参考，以官方文档/方舟控制台为准）。",
-  "adapters": [
-    { "name": "seedance", "baseUrl": "https://ark.cn-beijing.volces.com", "apiKey": "", "model": "" }
-  ]
-}

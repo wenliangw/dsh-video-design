@@ -1,637 +1,239 @@
-// agent/tools — dsh-video 工具面
-// video_init（工作区/故事初始化）/ video_view（故事全景）/ video_remember / video_recall（决策链）
-// generate_shot（校验→dry-run 转译计价→幂等出片）/ video_task（任务进度/取片）/ svg_render（SVG→PNG）
+// agent/tools.ts —— v2 工具面（两个工具，别无其他）
 //
-// 工具均带 video 前缀或领域名，避免与 dsh-mesync 的 recall/remember/reality 同名。
+// shot_gen：提交一次真实生成——纯文本提示词直送用户配置的模型。插件不做任何转译/校验/计价。
+// shot_task：查任务进度；终态取片落盘。
+// 底线：本文件没有任何模型、任何地址的硬编码——全部来自用户配置（.dvd.config.json 或环境变量）。
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import {
-  resolveContext, ensureWorkspaceSkeleton, ensureStorySkeleton, copyTemplates, seedFileIfAbsent,
-  loadWorkspaceConfig, workspaceConfigCorrupt, type VideoContext,
-} from '../workspace/index.js'
-import { loadAxes, validateAxes } from '../doctrine/index.js'
-import {
-  estimate, buildStandardSentence, toRequest, validateReferenceInput,
-  createGeneration, getTask, extraDoneStatuses, extraFailedStatuses,
-  readShotRecord, writeShotRecord, extractVideoUrl,
-  resolveCapabilities,
-  type ShotJSON, type ShotRecord, type CapsOverride,
+  createGeneration, getTask, isTerminal, downloadVideo, saveFile, buildBody,
 } from '../adapters/seedance/seedance.js'
-import { validateFoundation, foundationTemplate, renderFoundation } from '../adapters/seedance/foundation.js'
-import {
-  resolveAdapter, describeAdapters, SUPPORTED_ADAPTERS, DEFAULT_ADAPTER,
-} from '../adapters/registry.js'
-import {
-  initDB, registerStory, listStories,
-  insertDecision, getRecentDecisions, searchDecisions, getDecisionById, updateDecisionOutcome,
-  type DecisionNode,
-} from '../db/index.js'
-import type { Config } from '../config/index.js'
+import { resolveConfig, queryUrlError } from '../workspace/config.js'
 
-/** 当前活跃上下文（events 在 session-start 设置） */
-let currentContext: VideoContext | null = null
+/** 实验记录文件顶部目录名 */
+const EXPERIMENTS_DIR = 'experiments'
 
-export function setCurrentContext(ctx: VideoContext | null): void {
-  currentContext = ctx
+/** 标签白名单（参与文件名，模型输入不可信，防路径穿越） */
+const SAFE_LABEL = /^[A-Za-z0-9_-]+$/
+
+function safeLabel(raw?: string): string {
+  if (raw && SAFE_LABEL.test(raw)) return raw
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `shot-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
 }
 
-/** 读当前活跃上下文（注入面 text() 动态解析用） */
-export function peekVideoContext(): VideoContext | null {
-  return currentContext
+/** 实验根目录：配置文件所在目录（没有配置就 cwd）下的 experiments/ */
+function experimentsRoot(cwd: string, configFile: string | null): string {
+  const base = configFile ? path.dirname(configFile) : path.resolve(cwd)
+  return path.join(base, EXPERIMENTS_DIR)
 }
 
-/** shot 文件名/EP 目录名白名单（防路径穿越：模型产出的 index/episode 参与 path.join） */
-const SAFE_INDEX = /^[A-Za-z0-9_-]+$/
-const SAFE_EP = /^EP\d+$/
-
-function safeEpisode(ep?: string): string {
-  return ep && SAFE_EP.test(ep) ? ep : 'EP001'
+/** 实验记录（三处事实：这镜怎么提的、发给了哪个模型哪个地址、结果在哪） */
+export interface ExperimentRecord {
+  label: string
+  prompt: string
+  promptChars: number
+  model: string
+  createUrl: string
+  extra: Record<string, unknown>
+  taskId: string
+  status: string
+  submittedAt: string
+  finishedAt?: string
+  videoUrl?: string
+  mp4File?: string
+  lastError?: string
 }
 
-/** 同 shot 进程内互斥（check-then-act 竞态：两个并行 generate_shot 同 index 都通过幂等检查 → 双 POST 双扣费） */
-const shotLocks = new Map<string, Promise<unknown>>()
-
-function withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
-  const prev = shotLocks.get(key) ?? Promise.resolve()
-  const run = prev.then(fn, fn)
-  const tail = run.catch(() => undefined)
-  shotLocks.set(key, tail)
-  return run.finally(() => {
-    if (shotLocks.get(key) === tail) shotLocks.delete(key)
-  })
+export function recordFile(root: string, label: string): string {
+  return path.join(root, `${label}.json`)
 }
 
-const MAX_MP4_BYTES = 500 * 1024 * 1024 // 成片下载上限 500MB
-
-/** 解析 cwd（工具侧没有 agent 引用时，用 process.cwd() 兜底） */
-function effectiveContext(): VideoContext {
-  if (currentContext?.storyRoot || currentContext?.workspaceRoot) return currentContext
-  return resolveContext(process.cwd())
+function writeRecord(root: string, record: ExperimentRecord): void {
+  saveFile(recordFile(root, record.label), JSON.stringify(record, null, 2))
 }
 
-/** 决策格式化（摘要一行） */
-function formatSummary(d: DecisionNode): string {
-  const scopes = d.scopes?.length ? ` [${d.scopes.join(', ')}]` : ''
-  return `- ${d.id} · **${d.decision}** (${d.outcome})${scopes}`
-}
-
-/** 航运模板根（lib/templates） */
-function templatesRoot(): string {
-  const moduleDir = path.dirname(fileURLToPath(import.meta.url))
-  return path.join(moduleDir, '..', 'templates')
-}
-
-/** 时长归一：shot.duration > 工作区默认 > 插件默认；钳到 2–30 秒 */
-function clampDuration(raw?: number, ws?: number, fallback = 5): number {
-  const n = Number.isFinite(raw) && (raw as number) > 0
-    ? (raw as number)
-    : (Number.isFinite(ws) && (ws as number) > 0 ? (ws as number) : fallback)
-  return Math.min(30, Math.max(2, Math.round(n)))
-}
-
-/** 读航运能力速览母版（缺失返回空串） */
-function readCapabilitiesTemplate(): string {
+function readRecord(root: string, label: string): ExperimentRecord | null {
   try {
-    const p = path.join(templatesRoot(), 'agents', 'CAPABILITIES.md')
-    return fs.existsSync(p) ? fs.readFileSync(p, 'utf-8') : ''
+    return JSON.parse(fs.readFileSync(recordFile(root, label), 'utf-8')) as ExperimentRecord
   } catch {
-    return ''
+    return null
   }
 }
 
-export function registerTools(ctx: Context, config: Config): void {
-  // ---- video_init — 创建视频工作区/故事 ----
+/** 按 taskId 反查记录（同任务 ID 全局唯一） */
+function findRecordByTask(root: string, taskId: string): ExperimentRecord | null {
+  let files: string[] = []
+  try {
+    files = fs.readdirSync(root).filter(f => f.endsWith('.json'))
+  } catch {
+    return null
+  }
+  for (const f of files) {
+    const r = readRecord(root, f.replace(/\.json$/, ''))
+    if (r?.taskId === taskId) return r
+  }
+  return null
+}
+
+/** 配置缺失 → 可操作中文报错（不给任何内置默认值，只指路） */
+function configError(missing: string[], corrupt: Error | null, configFile: string | null): string | undefined {
+  if (corrupt) return `.dvd.config.json 存在但 JSON 损坏：${corrupt.message}——修复后再试。`
+  if (!missing.length) return undefined
+  const items = missing.map(k => `- ${k}`).join('\n')
+  return `缺少用户配置（插件不内置任何模型/地址事实，缺什么只列什么）：\n${items}\n` +
+    `填法：在 ${configFile ?? '当前目录新建 .dvd.config.json'} 里写 { "apiKey": "...", "model": "...", "createUrl": "创建任务的完整 API 地址", "queryUrl": "查询任务的完整 API 地址，含 {task_id} 占位符" }；` +
+    '上述四项也可分别用环境变量 SEEDANCE_API_KEY / SEEDANCE_MODEL / SEEDANCE_CREATE_URL / SEEDANCE_QUERY_URL 提供（密钥推荐走环境变量，不进文件）。'
+}
+
+export function registerTools(ctx: Context): void {
+  // ---- shot_gen — 提交一次真实生成（纯提示词，插件零转译） ----
   ctx.tools.register(defineTool({
-    name: 'video_init',
-    description: '创建 dsh-video 视频工作区/故事目录骨架（激活三态①：用户确认后调用）。' +
-      '在目标根目录创建 .dvd（机制+工作区审美+配置）与指定故事目录（.story 记忆层 + EP001 资产 + AGENTS.md 心法总纲），' +
-      '并把航运心法 skills 实例化进 .dvd/skills。幂等：已存在的文件不覆盖。',
+    name: 'shot_gen',
+    description: 'v2 最小核：把一段纯文本提示词直送用户配置的视频生成模型，发起一次真实生成（花钱）。' +
+      '插件不内置任何模型/地址事实——模型、API Key、完整请求地址全部来自用户配置（.dvd.config.json 或环境变量）。' +
+      '插件不做校验/转译/计价：提示词一字不改直达模型，费用以后台账单为准。' +
+      '每次提交落一条实验记录（experiments/<label>.json），无 API Key 或 dry_run=true 时只预览请求体、不发起。',
     parameters: {
-      story: { type: 'string', required: true, description: '故事目录名（如 story-林小满），将在工作区根下创建' },
-      workspace: { type: 'string', description: '工作区根目录；默认当前上下文的工作区根，无则当前 cwd' },
+      prompt: { type: 'string', required: true, description: '纯文本提示词，原样直送模型（v2 无转译层，怎么写就怎么送）' },
+      label: { type: 'string', description: '实验标签（字母/数字/下划线/连字符，如 h0-simple-25-r1）；缺省自动生成 shot-时间戳' },
+      extra: { type: 'string', description: 'JSON 字符串，合并进请求体的其他参数（如 {"duration":5,"resolution":"720p"}）；model 与 content 由插件保持，不可覆盖' },
+      dry_run: { type: 'boolean', description: 'true=只预览「将发送的请求体和目标地址」不发起不落盘（默认 false；无 API Key 时强制预览）' },
     },
     output: {
       schema: { type: 'string' },
       render: (_args: any, value: any) => [{ type: 'text', text: value }],
     },
-    async execute(args: { story: string; workspace?: string }, _exec: any) {
-      const vctx = effectiveContext()
-      const workspaceRoot = path.resolve(args.workspace ?? vctx.workspaceRoot ?? process.cwd())
-      if (!/^[\w\u4e00-\u9fa5-]+$/.test(args.story)) {
-        return '故事目录名只能含字母/数字/下划线/连字符/中文。'
-      }
-      const wsCreated = ensureWorkspaceSkeleton(workspaceRoot)
-      // 航运心法 skills/rules/能力速览 实例化进 .dvd（幂等，不覆盖用户编辑；清理改名遗留旧文件）
-      copyTemplates(path.join(templatesRoot(), 'skills'), path.join(workspaceRoot, '.dvd', 'skills'), { 'correction.skill.md': '_correction.skill.md' })
-      copyTemplates(path.join(templatesRoot(), 'rules'), path.join(workspaceRoot, '.dvd', 'rules'), { 'correction.rule.md': '_correction.rule.md', 'workspace.rule.md': '_workspace.rule.md' })
-      // 官方能力库参考副本（Agent 读卡片/组合包用）
-      copyTemplates(path.join(templatesRoot(), 'doctrine'), path.join(workspaceRoot, '.dvd', 'doctrine'))
-      seedFileIfAbsent(path.join(workspaceRoot, '.dvd', 'capabilities.md'), readCapabilitiesTemplate())
-      const storyRoot = path.join(workspaceRoot, args.story)
+    async execute(args: { prompt: string; label?: string; extra?: string; dry_run?: boolean }, _exec: any) {
+      const cwd = process.cwd()
+      const cfg = resolveConfig(cwd)
+      const cfgErr = configError(cfg.missing, cfg.corrupt, cfg.file)
+      if (cfgErr) return cfgErr
 
-      const agentsMd = (() => {
+      const queryErr = queryUrlError(cfg.queryUrl!)
+      if (queryErr) return queryErr
+
+      let extra: Record<string, unknown> = {}
+      if (args.extra) {
         try {
-          const p = path.join(templatesRoot(), 'agents', 'AGENT_TEMPLATE.md')
-          return fs.existsSync(p) ? fs.readFileSync(p, 'utf-8') : ''
+          extra = JSON.parse(args.extra) as Record<string, unknown>
         } catch {
-          return ''
-        }
-      })()
-
-      const { created, storyName } = ensureStorySkeleton(storyRoot, args.story, agentsMd)
-
-      initDB(workspaceRoot)
-      registerStory(storyRoot, storyName)
-
-      setCurrentContext({ workspaceRoot, storyRoot })
-
-      const parts = [
-        `✅ dsh-video ${wsCreated ? '工作区' : '工作区（已存在）'} + ${created ? '新故事' : '故事（已存在）'} 就绪：`,
-        `工作区根：${workspaceRoot}`,
-        `故事根：${storyRoot}`,
-        '',
-        '目录契约：',
-        '  .dvd/skills,rules,tastes,db,config.json,doctrine ← 机制 + 工作区级审美 + 配置 + 官方能力库副本',
-        '  <story>/.story/{wiki,tastes,material,corrections} + story-structure.md ← 故事级记忆 + 跨集故事结构',
-        '  <story>/EP001/{script.md,plan.md,shots/} ← 创作资产（剧本 → 拍片计划 → S001.json 三份记录 + S001.mp4）',
-      ]
-      const stories = listStories()
-      if (stories.length > 1) {
-        parts.push('', '工作区现有故事：' + stories.map(s => s.name).join('、'))
-      }
-      return parts.join('\n')
-    },
-  }))
-
-  // ---- video_view — 故事全景 ----
-  ctx.tools.register(defineTool({
-    name: 'video_view',
-    description: '查看当前故事全景：故事速览、品味（工作区底色+故事级）、EP 进度、素材档案、纠错清单、最近决策。',
-    parameters: {},
-    output: {
-      schema: { type: 'string' },
-      render: (_args: any, value: any) => [{ type: 'text', text: value }],
-    },
-    async execute(_args: {}, _exec: any) {
-      const vctx = effectiveContext()
-      if (!vctx.storyRoot) {
-        return vctx.workspaceRoot
-          ? `当前在工作区 ${vctx.workspaceRoot} 但未处于任何故事目录。工作区故事：${listStories().map(s => s.name).join('、') || '（无）'}。想开新故事告诉我目录名即可（video_init）。`
-          : '当前目录不是 dsh-video 故事/工作区。用户确认创作意图后可 video_init 创建。'
-      }
-      const storyRoot = vctx.storyRoot!
-      try {
-        const parts: string[] = []
-        const overview = path.join(storyRoot, '.story', 'overview.md')
-        if (fs.existsSync(overview)) parts.push(fs.readFileSync(overview, 'utf-8'))
-        const structure = path.join(storyRoot, '.story', 'story-structure.md')
-        if (fs.existsSync(structure)) parts.push(fs.readFileSync(structure, 'utf-8'), '')
-        const eps = fs.readdirSync(storyRoot).filter(e => /^EP\d+$/.test(e)).sort()
-        if (eps.length > 0) {
-          parts.push('## EP 进度')
-          for (const ep of eps) {
-            const shotsDir = path.join(storyRoot, ep, 'shots')
-            const shots = fs.existsSync(shotsDir) ? fs.readdirSync(shotsDir).filter(f => f.endsWith('.json')) : []
-            const video = fs.existsSync(path.join(storyRoot, ep, 'video.mp4'))
-            const script = fs.existsSync(path.join(storyRoot, ep, 'script.md')) ? '📝 剧本' : ''
-            const plan = fs.existsSync(path.join(storyRoot, ep, 'plan.md')) ? '🗺 拍片计划' : ''
-            parts.push(`- ${ep}：${shots.length} 镜头${video ? '，✅ video.mp4' : ''}${script ? `，${script}` : ''}${plan ? `，${plan}` : ''}`)
-          }
-          parts.push('')
-        }
-        const listDir = (sub: string) => {
-          try { return fs.readdirSync(path.join(storyRoot, '.story', sub)) } catch { return [] }
-        }
-        const material = listDir('material')
-        if (material.length > 0) {
-          parts.push('## 素材档案')
-          parts.push(...material.map(m => `- ${m}`))
-          parts.push('')
-        }
-        const corrections = listDir('corrections')
-        if (corrections.length > 0) {
-          parts.push('## 纠错清单')
-          parts.push(...corrections.map(f => `- ${f}`))
-          parts.push('')
-        }
-        const decisions = getRecentDecisions(5)
-        if (decisions.length > 0) {
-          parts.push('## 最近决策')
-          parts.push(...decisions.map(formatSummary))
-          parts.push('')
-        }
-        return parts.join('\n') || '故事记忆还是空的，开拍第一条自然语言吧。'
-      } catch (err) {
-        return `读取故事全景失败：${err instanceof Error ? err.message : String(err)}（故事目录可能被移动/删除，检查 ${storyRoot}）`
-      }
-    },
-  }))
-
-  // ---- video_remember — 记创作决策 ----
-  ctx.tools.register(defineTool({
-    name: 'video_remember',
-    description: '在你的视频工作区记忆里记录一条创作决策节点（取舍、因果、品味信号），供 video_recall 召回。',
-    parameters: {
-      decision: { type: 'string', required: true, description: '决策内容' },
-      rationale: { type: 'string', required: true, description: '为什么这么定（取舍与因果）' },
-      trigger: { type: 'string', description: '触发场景' },
-      alternatives: { type: 'string', description: 'JSON 数组 [{option, why_not}]' },
-      taste_signals: { type: 'string', description: 'JSON 数组 [{signal, context}]，反映的品味信号' },
-      outcome: { type: 'string', description: 'adopted/reverted/refined/pending，默认 adopted' },
-      caused_by: { type: 'string', description: '因果链：引发本决策的决策 id' },
-      supersedes: { type: 'string', description: '被本决策替代的旧决策 id（存在时自动把旧决策 outcome 更新为 superseded_outcome，默认 refined）' },
-      superseded_outcome: { type: 'string', description: '旧决策被取代后的结局：refined（已修正，默认）或 reverted（已推翻）' },
-      scopes: { type: 'string', description: 'JSON 数组，分类路径，如 ["tastes/pacing","wiki/prompt"]' },
-    },
-    output: {
-      schema: { type: 'string' },
-      render: (_args: any, value: any) => [{ type: 'text', text: value }],
-    },
-    async execute(args: Record<string, string | undefined>, _exec: any) {
-      if (!currentContext?.workspaceRoot) return '当前上下文没有视频工作区，无法记录决策。'
-      const parse = <T,>(v: string | undefined): T => { try { return v ? JSON.parse(v) as T : [] as T } catch { return [] as T } }
-      const outcomeNorm = (['adopted', 'reverted', 'refined', 'pending'] as const).includes(args.outcome as any)
-        ? (args.outcome as DecisionNode['outcome']) : 'adopted'
-      const node: DecisionNode = {
-        id: crypto.randomUUID(),
-        created_at: new Date().toISOString(),
-        session_id: null,
-        decision: args.decision!,
-        rationale: args.rationale!,
-        trigger: args.trigger ?? null,
-        evidence: null,
-        outcome: outcomeNorm,
-        caused_by: args.caused_by ?? null,
-        supersedes: args.supersedes ?? null,
-        alternatives: parse(args.alternatives),
-        taste_signals: parse(args.taste_signals),
-        scopes: parse(args.scopes),
-      }
-      insertDecision(node)
-      // 因果链闭环：被取代的旧决策标记结局（默认 refined；old 不存在则静默跳过）
-      let supersededNote = ''
-      if (args.supersedes) {
-        const prev = getDecisionById(args.supersedes)
-        if (prev) {
-          const oldOutcome = args.superseded_outcome === 'reverted' ? 'reverted' : 'refined'
-          updateDecisionOutcome(args.supersedes, oldOutcome)
-          supersededNote = `（已把被取代决策 ${args.supersedes} 的 outcome 更新为 ${oldOutcome}）`
+          return 'extra 不是合法 JSON 字符串。'
         }
       }
-      return `✅ Decision recorded: **${node.decision}** (${node.id})${supersededNote}`
-    },
-  }))
 
-  // ---- video_recall — 召回决策 ----
-  ctx.tools.register(defineTool({
-    name: 'video_recall',
-    description: '从视频工作区记忆召回决策：不传 id = 摘要列表（query 关键词 / scope 分类 / limit）；传 id = 单条完整详情（rationale/alternatives/taste_signals/因果）。',
-    parameters: {
-      id: { type: 'string', description: '决策 id，传本参数则返回该条详情' },
-      query: { type: 'string', description: '关键词匹配 decision/rationale/trigger' },
-      scope: { type: 'string', description: '分类路径过滤（如 tastes/pacing）' },
-      limit: { type: 'number', description: '最多返回条数，默认 20' },
-    },
-    output: {
-      schema: { type: 'string' },
-      render: (_args: any, value: any) => [{ type: 'text', text: value }],
-    },
-    async execute(args: { id?: string; query?: string; scope?: string; limit?: number }, _exec: any) {
-      if (!currentContext?.workspaceRoot) return '当前上下文没有视频工作区，无记忆可召回。'
-      if (args.id) {
-        const d = getDecisionById(args.id)
-        if (!d) return `No decision found with id ${args.id}.`
-        const parts = [`## ${d.decision} (${d.outcome})`, `id: ${d.id}`, `created_at: ${d.created_at}`]
-        if (d.trigger) parts.push(`trigger: ${d.trigger}`)
-        parts.push(`rationale: ${d.rationale}`)
-        if (d.alternatives.length) parts.push(`alternatives: ${d.alternatives.map(a => `${a.option} (${a.why_not ?? ''})`).join('; ')}`)
-        if (d.taste_signals.length) parts.push(`taste_signals: ${d.taste_signals.map(t => `${t.signal}: ${t.context ?? ''}`).join('; ')}`)
-        if (d.caused_by) parts.push(`caused_by: ${d.caused_by}`)
-        if (d.supersedes) parts.push(`supersedes: ${d.supersedes}`)
-        if (d.scopes.length) parts.push(`scopes: ${d.scopes.join(', ')}`)
-        return parts.join('\n')
-      }
-      const limit = Math.min(50, Math.max(1, args.limit ?? 20))
-      // scope 下推进 SQL（先过滤后 LIMIT——避免 limit 截断后再过滤把匹配项丢掉）
-      const decisions = args.query
-        ? searchDecisions(args.query, limit, args.scope)
-        : args.scope
-          ? searchDecisions('', limit, args.scope)
-          : getRecentDecisions(limit)
-      if (decisions.length === 0) return 'No related decisions found.'
-      return '## Decision Summaries\n' + decisions.map(formatSummary).join('\n') + '\n\n传 id 可看单条完整详情。'
-    },
-  }))
-
-  // ---- generate_shot — 校验/转译/计价/出片 ----
-  ctx.tools.register(defineTool({
-    name: 'generate_shot',
-    description: '标准镜头语言 JSON → seeddance 出片（v1 单镜头）。' +
-      '先校验 11 域轴值合法性，再转译两层提示词（标准句法/厂商叙述流）并计价。' +
-      'dry_run=true 或无 API key 时只返回转译+计价预览（不花钱、不落盘）；' +
-      '否则提交生成（幂等：同 shot 有未完成任务时拒绝重复提交）并把三份记录落盘。',
-    parameters: {
-      shot_json: { type: 'string', required: true, description: '标准镜头语言 JSON 原文。必填：shot.subject（主体与动作）、shot.index（如 S001）、shot.axes（11 域轴值 map：size/angle/movement/composition/lighting/color/pacing/sound/format/vfx/performance）。必填：shot.foundation（基础面卡：景/人/交互/动线——景先立（三锚+机位+时辰）→人（身份/比例/站位）→交互（接触/遮挡/尺度/恒存）→动线（事件，可选），校验规则见 doctrine/foundation.md——缺卡、道路走向×动线冲突、事件未重述持有物会被硬拦）。可选：shot.shot.duration（秒，2–30，缺失用工作区/插件默认）、shot.windows（[{from,to,movement}] 时间窗）、shot.cards（手法卡片 id 数组）、constraints、materials、meta。' },
-      dry_run: { type: 'boolean', description: 'true 只校验+转译+计价不提交（默认：无 key 时强制 true）' },
-      adapter: { type: 'string', description: `adapter 名（对应工作区 .dvd.config.json 里 adapters[].name）；默认 ${DEFAULT_ADAPTER}（v1 仅 seedance）` },
-      reference_urls: { type: 'string', description: 'JSON 数组：可公开访问的 HTTPS 图片 URL（jpeg/png/webp/bmp/tiff/gif；2.0+ 另支持 heic/heif）。role 自动分配：1 张=首帧（first_frame）、2 张=首尾帧、3+ 张或 reference_mode=true=参考图（reference_image）。参考图仅 2.5（上限 30 张）/ 2.0 系列（上限 9 张）；1.0 系列仅支持首/尾帧（pro 2 张、fast 1 张）。' },
-    },
-    output: {
-      schema: { type: 'string' },
-      render: (_args: any, value: any) => [{ type: 'text', text: value }],
-    },
-    async execute(args: { shot_json: string; dry_run?: boolean; adapter?: string; reference_urls?: string }, _exec: any) {
-      const vctx = effectiveContext()
-      if (!vctx.storyRoot) return '当前不在任何故事目录。先在故事目录内工作（或 video_init 创建）。'
-
-      let shot: ShotJSON
-      try {
-        shot = JSON.parse(args.shot_json) as ShotJSON
-      } catch {
-        return 'shot_json 不是合法 JSON。先用校验目的重贴。'
-      }
-      if (!shot.shot?.subject || !shot.shot?.index) return 'shot_json 缺 shot.subject / shot.index。'
-      if (!shot.shot.axes || typeof shot.shot.axes !== 'object') return 'shot_json 缺 shot.axes（11 域轴值）。'
-      // 路径穿越防护：index/episode 参与 path.join 落盘，必须是白名单名（模型输入不可信）
-      if (!SAFE_INDEX.test(shot.shot.index)) return `shot.index 只允许字母/数字/下划线/连字符（如 S001），当前值「${shot.shot.index}」不合法，已拒绝。`
-      const episode = safeEpisode(shot.shot.episode)
-
-      const axes = loadAxes()
-      const errors = validateAxes(shot.shot.axes, axes)
-      if (errors.length > 0) return '轴值校验失败：\n' + errors.map(e => `- ${e}`).join('\n')
-
-      // ---- 基础面卡硬校验（景→人→交互→动线 = 每镜「拍什么」地基；规则读 doctrine/foundation.md，机制零写死） ----
-      const foundationErrors = validateFoundation(shot.shot.foundation)
-      if (foundationErrors.length > 0) {
-        return '基础面卡校验失败（景→人→交互→动线——每镜必填的「拍什么」地基；缺失会让方向词失去世界语义）：\n'
-          + foundationErrors.map(e => `- ${e}`).join('\n') + '\n可复制模板：\n' + foundationTemplate()
-      }
-
-      // ---- 适配器解析（.dvd.config.json 按 name 对应；文件 apiKey 优先，环境变量兜底） ----
-      const wsCfg = vctx.workspaceRoot ? loadWorkspaceConfig(vctx.workspaceRoot) : {}
-      const adapterName = args.adapter ?? shot.meta?.adapter ?? wsCfg.adapter ?? DEFAULT_ADAPTER
-      const configRoot = vctx.workspaceRoot ?? process.cwd()
-      const resolved = resolveAdapter(configRoot, adapterName)
-      const supported = (SUPPORTED_ADAPTERS as readonly string[]).includes(adapterName)
-      if (!supported) {
-        return resolved.configured
-          ? `已配置 adapter「${adapterName}」，但 v1 客户端未实现（当前支持：${SUPPORTED_ADAPTERS.join('、')}）。其余 adapter 在路线图上，未静默忽略。`
-          : `未知 adapter「${adapterName}」（当前支持：${SUPPORTED_ADAPTERS.join('、')}）。工作区已配置：\n${describeAdapters(configRoot)}`
-      }
-
-      const apiKey = resolved.apiKey
-      // 模型必须由用户显式设置（.dvd.config.json adapters[].model > SEEDANCE_MODEL 环境变量）。
-      // 插件不内置默认模型：模型版本更迭是厂商节奏，插件不为模型改版发版。
-      const model = resolved.model
-      if (!model) {
-        return '未配置模型，拒绝继续。模型版本更迭快、插件不内置默认——请在 .dvd.config.json 的 adapters[].model 填你方舟账号开通的版本化 Model ID（当前在售参考 src/adapters/seedance/overview.md「当前在售版本」表，最终以方舟控制台 model-list 为准），或设置环境变量 SEEDANCE_MODEL。'
-      }
-      const apiBase = resolved.baseUrl
-
-      // ---- 家族能力解析（完全配置化）：契约不内置任何按模型/家族区分的事实，能力必须由用户 caps 声明 ----
-      const capsLabel = resolved.family?.trim() || model
-      const capsRes = resolveCapabilities(capsLabel, resolved.caps as CapsOverride | undefined)
-      if (!capsRes.caps) return capsRes.error ?? '家族能力解析失败。'
-      const caps = capsRes.caps
-
-      const isDry = args.dry_run === true || !apiKey
-
-      // ---- reference_urls 校验：数组 + 公网 HTTPS + 张数上限（按用户 caps 声明） ----
-      let referenceUrls: string[] = []
-      try {
-        const parsed = args.reference_urls ? JSON.parse(args.reference_urls) : []
-        if (!Array.isArray(parsed)) return 'reference_urls 必须是 JSON 数组。'
-        const bad = parsed.find(u => typeof u !== 'string' || !/^https:\/\//.test(u))
-        if (bad !== undefined) return `reference_urls 含非法项（须公网 HTTPS URL）：${JSON.stringify(bad)}`
-        referenceUrls = parsed
-        const refErr = validateReferenceInput(model, referenceUrls.length, config.referenceMode, caps)
-        if (refErr) return refErr
-      } catch {
-        return 'reference_urls 不是合法 JSON 数组。'
-      }
-
-      // ---- 运行参数合并：shot 内嵌 > 工作区 .dvd/config.json > 插件配置 ----
-      const duration = clampDuration(shot.shot.duration, Number(wsCfg.defaultDuration), config.defaultDuration)
-      const quality: '480p' | '720p' | '1080p' = (wsCfg.defaultQuality === '480p' || wsCfg.defaultQuality === '720p' || wsCfg.defaultQuality === '1080p')
-        ? wsCfg.defaultQuality : config.defaultQuality
-      const axisFormat = typeof shot.shot.axes?.format === 'string' ? shot.shot.axes.format.trim() : ''
-      const aspectRatio = axisFormat || wsCfg.defaultAspectRatio || config.defaultAspectRatio
-      // 计价方向：方舟按人民币计费、无积分/余额 API——v1 计价为未校准占位，estimate 返回 null 时闸门放行并明示
-      const cost = estimate(model, duration, quality, caps.family)
-
-      const plan = toRequest(shot, {
-        model,
-        duration,
-        resolution: quality,
-        aspectRatio,
-        referenceMode: config.referenceMode,
-        referenceUrls,
-        caps,
-        clampMax:
-          typeof config.promptMaxCharsZh === 'number' ? config.promptMaxCharsZh : undefined,
-      })
-
-      const recordFile = path.join(vctx.storyRoot!, episode, 'shots', `${shot.shot.index}.json`)
+      const { body, stripped } = buildBody(cfg.model!, args.prompt, extra)
+      const label = safeLabel(args.label)
+      const root = experimentsRoot(cwd, cfg.file)
 
       const preview = [
-        '## 🎬 镜头编译预览',
-        `**标准层（可倒解析回 11 域）**：${buildStandardSentence(shot)}`,
-        `**厂商层（${adapterName} prompt 全文）**：${plan.vendorPrompt}`,
-        ...(plan.overflow ? [`⚠️ **超限裁剪**：厂商 prompt 原文 ${plan.overflow.originalChars} 字 > 插件裁剪上限 ${plan.overflow.limit} 字（默认=官方建议值 500 字；官方口径是「建议」不是「硬限制」，超长不会被拒，但易信息分散、成片缺元素），已按「；」边界裁剪尾部 ${plan.overflow.droppedChars} 字（被裁片段：${plan.overflow.droppedTail}）。消除方法：拆镜/减事件复杂度（一镜一个信息落点）；确要全文超长提交可在插件配置把 promptMaxCharsZh 设为 0 关闭裁剪。`] : []),
-        `**参数**：adapter=${adapterName}｜family=${plan.family}（caps 用户声明）｜model=${plan.model}｜duration=${plan.duration}s｜resolution=${plan.resolution}｜ratio=${plan.ratio}${plan.body.generate_audio === false ? '｜generate_audio=false（v1 无声承诺）' : ''}`,
-        `**基础面卡（景→人→交互→动线）**：${renderFoundation(shot.shot.foundation!)}`,
-        referenceUrls.length ? `**参考图**：${referenceUrls.length} 张，role=${plan.referenceRoles.join('/')}` : '**参考图**：无（纯文生视频）',
-        `**成本预估**：${cost.pricingNote}`,
-      ]
-      if (cost.estimatedCost !== null) {
-        preview.push(`**金额**：约 ¥${cost.estimatedCost.toFixed(2)}（${cost.duration}s × ${cost.resolution}）`)
-      }
-      if (resolved.corrupt) preview.push('⚠️ `.dvd.config.json` 存在但 JSON 损坏——凭证/模型配置未被读取（环境变量通道仍在）。修复该文件后重试。')
-      if (vctx.workspaceRoot && workspaceConfigCorrupt(vctx.workspaceRoot)) preview.push('⚠️ `.dvd/config.json` 存在但 JSON 损坏——预算/默认参数已回退插件默认值，请修复以避免预算失守。')
+        '## 🎬 提交预览（真实生成 = 花钱，请确认再提）',
+        `**目标**：${cfg.createUrl}`,
+        `**模型**：${cfg.model}`,
+        `**请求体**：${JSON.stringify(body)}`,
+        stripped.length ? `⚠️ extra 里被剥离的字段：${stripped.join('、')}（model/content 由插件保持）` : null,
+        `**标签/落点**：${path.join(root, label)}.*`,
+        '**费用**：本工具不记账不估费，金额以后台账单为准',
+      ].filter(Boolean).join('\n')
 
-      if (isDry) {
-        preview.push(`**dry_run 模式**（${args.dry_run ? '显式指定' : '未检测到 API key（.dvd.config.json 与 SEEDANCE_API_KEY 环境变量均未配置）'}）：未提交生成、未花钱、未落盘。`)
-        return preview.join('\n')
+      if (args.dry_run === true || !cfg.apiKey) {
+        return preview + (cfg.apiKey ? '' : '\n\n（未配置 API Key，仅预览；配好后去掉 dry_run 即真提交。）')
       }
 
-      // ---- 记录损坏 = 硬失败（绝不当作不存在——那会让幂等失效导致重复 POST 双倍扣费） ----
-      const recordExists = fs.existsSync(recordFile)
-      const existing = recordExists ? readShotRecord(recordFile) : null
-      if (recordExists && !existing) {
-        return `shot 记录 ${recordFile} 已存在但 JSON 损坏。为避免重复提交扣费已中止。请人工核对/修复该文件（或确认无未完成任务后删除再重提）。`
-      }
-
-      // ---- 幂等快路径：同 shot 有 pending 任务则拒绝重复提交 ----
-      if (existing?.meta.task_id && existing.meta.status === 'pending') {
-        const taskCheck = await getTask(existing.meta.task_id, apiKey, apiBase).catch(() => null)
-        if (!taskCheck || taskCheck.status === 'queued' || taskCheck.status === 'running') {
-          return `该 shot 已有未完成任务 ${existing.meta.task_id}，拒绝重复提交（重复 POST 会创建第二个任务）。用 video_task 查进度；确认失败后 video_task 会把记录标记 failed，再重提。`
-        }
-      }
-
-      // ---- 预算硬闸（方舟费率未校准时估值为 null：闸门放行但明示未拦截） ----
-      const budget = wsCfg.budgetCredits ?? config.budgetCredits
-      if (budget > 0 && cost.estimatedCost !== null && cost.estimatedCost > budget) {
-        return `预算硬闸拦截：预估 ¥${cost.estimatedCost.toFixed(2)} > 预算上限 ¥${budget}。调低时长/画质或修改 .dvd/config.json。`
-      }
-      const budgetPassiveNote = budget > 0 && cost.estimatedCost === null
-        ? `⚠️ 已设预算上限 ¥${budget}（.dvd/config.json budgetCredits，单位元），但方舟费率表未校准（刊例价待补录 api.json）——本单闸门未拦截。`
-        : ''
-
-      // 同 shot 进程内互斥：并行 generate_shot 的 check-then-act 竞态防护（锁内重查 + POST + 落盘）
-      return await withLock(recordFile, async () => {
-        const current = fs.existsSync(recordFile) ? readShotRecord(recordFile) : null
-        if (current?.meta.task_id && current.meta.status === 'pending') {
-          try {
-            const taskCheck = await getTask(current.meta.task_id, apiKey, apiBase)
-            if (taskCheck.status === 'queued' || taskCheck.status === 'running') {
-              return `该 shot 已有未完成任务 ${current.meta.task_id}，拒绝重复提交。`
-            }
-          } catch {
-            return `该 shot 已有未完成任务 ${current.meta.task_id}，但远程查询失败（网络/权限），保守拒绝重提。用 video_task 确认状态后再试。`
-          }
-        }
-
-        const task = await createGeneration(plan.body, apiKey, apiBase)
-
-        const record: ShotRecord = {
-          shot,
-          vendor_prompt: plan.vendorPrompt,
-          meta: {
-            adapter: adapterName,
-            schema_ver: shot.meta?.schema_ver ?? current?.meta.schema_ver ?? '1.0',
-            model: plan.model,
-            duration: plan.duration,
-            resolution: plan.resolution,
-            task_id: task.task_id,
-            status: 'pending',
-            reference_urls: referenceUrls,
-            attempts: [...(current?.meta.attempts ?? []), { at: new Date().toISOString(), task_id: task.task_id, vendor_prompt: plan.vendorPrompt }].slice(-5),
-          },
-        }
-        writeShotRecord(recordFile, record)
-
-        return [
-          ...preview,
-          '',
-          budgetPassiveNote,
-          `✅ 已提交生成：task_id=${task.task_id}，创建即 ${task.status}（余额/用量以方舟控制台为准，无积分查询 API）`,
-          `三份记录已落盘：${recordFile}（shot / vendor_prompt / meta）`,
-          '出片后调用 video_task 查询并取回 mp4。',
-        ].filter(Boolean).join('\n')
+      const submitted = await createGeneration({
+        createUrl: cfg.createUrl!,
+        apiKey: cfg.apiKey,
+        body,
       })
+      const record: ExperimentRecord = {
+        label,
+        prompt: args.prompt,
+        promptChars: args.prompt.length,
+        model: cfg.model!,
+        createUrl: cfg.createUrl!,
+        extra: stripped.length ? Object.fromEntries(Object.entries(extra).filter(([k]) => !stripped.includes(k))) : extra,
+        taskId: submitted.task_id,
+        status: submitted.status,
+        submittedAt: new Date().toISOString(),
+      }
+      writeRecord(root, record)
+      return [
+        preview,
+        '',
+        `✅ 已提交，任务编号 ${submitted.task_id}`,
+        `实验记录：${recordFile(root, label)}（apiKey 不落盘）`,
+        `拿片：调用 shot_task，task_id=${submitted.task_id}（生成中/完成后多查几次）`,
+      ].join('\n')
     },
   }))
 
-  // ---- video_task — 任务进度/取片 ----
+  // ---- shot_task — 查进度 / 取片 ----
   ctx.tools.register(defineTool({
-    name: 'video_task',
-    description: '查询 seeddance 任务进度；完成时可选把 mp4 下载到故事 EP 的 shots 目录并更新 shot 记录状态。',
+    name: 'shot_task',
+    description: 'v2 查询生成任务进度；成功后下载成片到 experiments/ 并更新实验记录。' +
+      '非终态（排队/生成中）时如实返回当前状态，可稍后再查。任务/地址/模型全部来自用户配置与已有实验记录。',
     parameters: {
-      task_id: { type: 'string', required: true, description: 'generate_shot 返回的 task_id' },
-      episode: { type: 'string', description: '下载到的 EP 目录（默认 EP001）' },
-      index: { type: 'string', description: 'shot 序号（如 S001），用于命名 mp4 + 更新对应记录；缺省用 task_id 命名' },
-      adapter: { type: 'string', description: `adapter 名；默认取 shot 记录的 meta.adapter，再兜底 ${DEFAULT_ADAPTER}` },
+      task_id: { type: 'string', required: true, description: 'shot_gen 返回的任务编号' },
+      label: { type: 'string', description: '落盘标签（缺省从实验记录反查；查不到则用 task_id 作文件名）' },
     },
     output: {
       schema: { type: 'string' },
       render: (_args: any, value: any) => [{ type: 'text', text: value }],
     },
-    async execute(args: { task_id: string; episode?: string; index?: string; adapter?: string }, _exec: any) {
-      const vctx = effectiveContext()
-      // 路径穿越防护：index/episode 参与 path.join
-      if (args.index && !SAFE_INDEX.test(args.index)) return `index 只允许字母/数字/下划线/连字符（如 S001），当前值「${args.index}」已拒绝。`
-      const episode = safeEpisode(args.episode)
-      // adapter：参数优先 → shot 记录 meta.adapter → 工作区 config.adapter → 默认
-      const configRoot = vctx.workspaceRoot ?? process.cwd()
-      const wsCfg = vctx.workspaceRoot ? loadWorkspaceConfig(vctx.workspaceRoot) : {}
-      const shotsDir = vctx.storyRoot ? path.join(vctx.storyRoot, episode, 'shots') : null
-      let record: ShotRecord | null = null
-      if (shotsDir && args.index) record = readShotRecord(path.join(shotsDir, `${args.index}.json`))
-      const adapterName = args.adapter ?? record?.meta.adapter ?? wsCfg.adapter ?? DEFAULT_ADAPTER
-      const resolved = resolveAdapter(configRoot, adapterName)
-      const apiKey = resolved.apiKey
-      if (!apiKey) return `未检测到 API key（.dvd.config.json 的 ${adapterName}.apiKey 或 SEEDANCE_API_KEY 环境变量），无法查询任务。`
-      const task = await getTask(args.task_id, apiKey, resolved.baseUrl)
-      const errText = (task.error && (task.error.message || task.error.code)) ? `${task.error.message ?? task.error.code}` : task.status
-      // 失败终态：记录标记 failed + 失败归因（解除 pending 死锁，幂等重提的前置条件）
-      if (extraFailedStatuses().includes(task.status ?? '')) {
-        if (shotsDir && args.index && record) {
-          record.meta.status = 'failed'
-          record.meta.error = typeof task.error === 'object' && task.error ? (task.error.message ?? task.error.code ?? task.status) : task.status
-          writeShotRecord(path.join(shotsDir, `${args.index}.json`), record)
-          return `task ${args.task_id} 已失败（${errText}），记录已标记 failed 并写入失败归因；整改后重新 generate_shot 即可。`
+    async execute(args: { task_id: string; label?: string }, _exec: any) {
+      const cwd = process.cwd()
+      const cfg = resolveConfig(cwd)
+      if (!cfg.apiKey || !cfg.queryUrl) {
+        return `缺少配置（apiKey/queryUrl），没法查询。${cfg.missing.length ? '当前缺：' + cfg.missing.join('、') : ''}`
+      }
+      const root = experimentsRoot(cwd, cfg.file)
+      const existing = findRecordByTask(root, args.task_id)
+      const label = safeLabel(args.label ?? existing?.label ?? args.task_id.replace(/[^A-Za-z0-9_-]/g, '-'))
+
+      const queryUrl = cfg.queryUrl.replace('{task_id}', encodeURIComponent(args.task_id))
+      const st = await getTask({ queryUrl, apiKey: cfg.apiKey })
+
+      if (st.status === 'pending') {
+        return `任务 ${args.task_id} 无明确状态（响应：${st.raw ?? '空'}）。稍后再查。`
+      }
+
+      const touch = (patch: Partial<ExperimentRecord>) => {
+        const base = existing ?? {
+          label, prompt: '', promptChars: 0, model: cfg.model ?? '', createUrl: cfg.createUrl ?? '',
+          extra: {}, taskId: args.task_id, status: 'pending', submittedAt: new Date().toISOString(),
         }
-        return `task ${args.task_id} 已失败（${errText}）。归因整改后重新 generate_shot 即可。`
+        writeRecord(root, { ...base, ...patch, status: st.status })
       }
-      if (!extraDoneStatuses().includes(task.status ?? '')) {
-        return `task ${args.task_id} 状态：${task.status}。稍后再查。`
-      }
-      // 官方响应层级：成片 URL 在 content.video_url（output.video_url / 顶层 video_url 仅为兼容兜底）
-      const videoUrl = extractVideoUrl(task)
-      if (!videoUrl) return `task ${args.task_id} 已完成但响应里没有视频 URL（content.video_url 为空）。稍后重查或服务端回查。`
-      if (!vctx.storyRoot || !shotsDir) return `task 完成，video_url=${videoUrl}（当前不在故事目录，未下载）`
 
-      const base = args.index ?? args.task_id
-      const mp4 = path.join(shotsDir, `${base}.mp4`)
-      let res: Response
-      try {
-        res = await fetch(videoUrl, { signal: AbortSignal.timeout(300_000) })
-      } catch {
-        return `下载失败：请求超时（>5 分钟）。成片 url=${videoUrl}`
+      if (st.status === 'failed' || st.status === 'expired') {
+        touch({ finishedAt: new Date().toISOString(), lastError: st.raw })
+        return `❌ 任务 ${args.task_id} ${st.status === 'failed' ? '失败' : '超时'}。详情：${st.raw ?? '（无）'}。记录已更新：${recordFile(root, label)}`
       }
-      if (!res.ok) return `下载失败：HTTP ${res.status}。成片 url=${videoUrl}`
-      const clen = Number(res.headers.get('content-length') ?? 0)
-      if (clen > MAX_MP4_BYTES) return `下载失败：成片大小 ${(clen / 1048576).toFixed(0)}MB 超过上限 500MB。成片 url=${videoUrl}`
-      const buf = Buffer.from(await res.arrayBuffer())
-      if (buf.length > MAX_MP4_BYTES) return `下载失败：成片大小 ${(buf.length / 1048576).toFixed(0)}MB 超过上限 500MB。成片 url=${videoUrl}`
-      fs.mkdirSync(path.dirname(mp4), { recursive: true })
-      fs.writeFileSync(mp4, buf)
 
-      if (args.index && record) {
-        record.meta.status = 'done'
-        record.meta.video_file = mp4
-        record.meta.done_at = new Date().toISOString()
-        record.meta.error = undefined
-        writeShotRecord(path.join(shotsDir, `${args.index}.json`), record)
+      if (!isTerminal(st.status)) {
+        touch({})
+        return `⏳ 任务 ${args.task_id} 当前 ${st.status}（未完成）。稍后再查（生成中/排队中多试几次）。`
       }
-      return `✅ ${args.task_id} 出片完成：${mp4}（${Math.round(buf.length / 1024)} KB）`
-    },
-  }))
 
-  // ---- svg_render — SVG → PNG ----
-  ctx.tools.register(defineTool({
-    name: 'svg_render',
-    description: '把 SVG 文本栅格化为 PNG（服务端 sharp；失败给安装提示）。用途：确认卡构图预览、material 设定卡配图。' +
-      '注意：本地 PNG 不能直接喂 seeddance（官方只收公网 HTTPS URL）；本地图仅供人确认，或日后上传获得 URL 后再走 reference_urls。',
-    parameters: {
-      svg: { type: 'string', required: true, description: 'SVG 文本（Agent 生成的构图示意/设定卡）' },
-      name: { type: 'string', description: '输出文件名（无扩展名，默认 preview）' },
-      dir: { type: 'string', description: '输出目录（默认当前故事的 .preview/）' },
-    },
-    output: {
-      schema: { type: 'string' },
-      render: (_args: any, value: any) => [{ type: 'text', text: value }],
-    },
-    async execute(args: { svg: string; name?: string; dir?: string }, _exec: any) {
-      const vctx = effectiveContext()
-      const outDir = path.resolve(args.dir ?? (vctx.storyRoot ? path.join(vctx.storyRoot, '.preview') : path.join(process.cwd(), '.preview')))
-      fs.mkdirSync(outDir, { recursive: true })
-      const base = (args.name ?? 'preview').replace(/[/\\]/g, '_')
-      const svgFile = path.join(outDir, `${base}.svg`)
-      const pngFile = path.join(outDir, `${base}.png`)
-      fs.writeFileSync(svgFile, args.svg)
-      try {
-        const sharp = (await import('sharp')).default
-        const info = await sharp(Buffer.from(args.svg)).png().toFile(pngFile)
-        return `✅ 已栅格化：${pngFile}（${info.width}x${info.height}）\nSVG 源：${svgFile}`
-      } catch (err) {
-        return `SVG 渲染失败：${err instanceof Error ? err.message : String(err)}\n若为 sharp 缺失，请在插件包目录执行 npm i sharp。SVG 文本已存 ${svgFile}。`
+      // succeeded：拿片
+      if (!st.video_url) {
+        touch({ finishedAt: new Date().toISOString(), lastError: '状态 succeeded 但响应里没有 video_url' })
+        return `⚠️ 任务 ${args.task_id} 状态 succeeded，但响应里没有成片地址。原文：${st.raw ?? '（空）'}`
       }
+      const mp4 = path.join(root, `${label}.mp4`)
+      const buf = await downloadVideo(st.video_url)
+      saveFile(mp4, buf)
+      touch({
+        finishedAt: new Date().toISOString(),
+        videoUrl: st.video_url,
+        mp4File: mp4,
+      })
+      return `✅ 任务 ${args.task_id} 出片完成：${mp4}（${Math.round(buf.length / 1024)} KB）\n` +
+        `实验记录：${recordFile(root, label)}。看完片后告诉我评价（可用/不可用+一句原因），我记进实验记录。`
     },
   }))
 }

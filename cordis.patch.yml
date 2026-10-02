@@ -1,20 +1,12 @@
-# dsh-video-design bundle 配置层
+# dsh-video-design v2 bundle 配置层
 # 作为 dsh.bundle 被引用（package.json -> "dsh": {"bundle": {"patch": "./cordis.patch.yml"}}），
 # 由 dsh.profile.bundles 自动加载。
 # 契约（对照 dsh 宿主 cordis-plugin-loader / cordis-plugin-include 源码）：
 # - name = 加载契约：loader 按 entry.name import 模块，必须等于包名 dsh-video-design；
-# - id = 条目句柄（供后续 patch 定位/查重/配置回写），缺省会随机生成导致配置改写 churn——与 name 保持一致是推荐写法；
-# - 本补丁块自身不写 id（写了会被解读为「插入目标组的 id」而非插件 id）。
+# - id = 条目句柄（供后续 patch 定位/查重），与 name 保持一致是推荐写法。
+# v2 无插件级配置项：不做 config 块——模型、API Key、完整请求地址全部由用户在
+# .dvd.config.json 或环境变量里提供，插件不内置任何模型/URL 事实。
 
 - insert:
     - id: dsh-video-design
-      name: 'dsh-video-design'
-      config:
-        # 不内置默认模型：模型版本更迭是厂商节奏，插件不为模型改版发版。
-        # 用户须在 .dvd.config.json 的 adapters[].model（或 SEEDANCE_MODEL 环境变量）显式设置。
-        defaultDuration: 5
-        defaultQuality: '720p'
-        defaultAspectRatio: '16:9'
-        budgetCredits: 0  # 预算上限口径已随方舟契约定为人民币元（费率未校准前闸门放行并明示）
-        referenceMode: true
-        maxRecallDecisions: 5
+      name: dsh-video-design

@@ -1,28 +1,18 @@
-// dsh-video 入口 — dsh 视频创作插件
+// dsh-video-design v2 入口 —— 分步验证最小核（实验台）
 //
-// 模块划分：
-// - config/      配置（name / Config schema / inject）
-// - workspace/   工作区/故事上下文解析 + video_init 目录骨架
-// - doctrine/    官方能力库装载（11 域词汇轴 / 手法卡片 / 组合包，双面 md + YAML front-matter）
-// - adapters/   多厂商适配器（registry 注册解析 + 每厂商一目录：契约 overview.md/api.json 与实现同住；seeddance=火山方舟）
-// - db/          SQLite（story registry + 决策链）
-// - agent/       dsh 能力调用（session 事件、上下文注入、工具注册）
-//
-// 运行形态（与 dsh-mesync 同族）：Cordis bundle，注入面走 systemPrompt.section，
-// 工具面走 ctx.tools.register；能力速览表常驻注入（含 dvd 介绍与激活三态，全文件驱动），
-// 工作区/故事在场时追加心法总纲 + Story Context 投影。
+// 设计原则（与 v1 决裂）：
+// - 只有「已证实」的能力才配住在插件里。v1 的 11 域/卡片/编译环/确认卡/上游链/记忆五块
+//   全部是未经成片验证的假设，已随 master 分支归档（见 git 历史）。
+// - v2 唯一事实：写一段纯文本提示词 → 提交用户配置的模型 → 轮询 → 取片 → 记一条实验记录。
+//   插件零内置模型事实、零内置 URL 事实：模型、API Key、完整请求地址 100% 由用户配置。
+// - 每一步新能力上线前，必须先被一次真实成片实验证明（H0 能力摸底 → H1 句式效应 → …）。
 
 import type { Context } from '@deepseek-ai/cordis'
-
-import { name, Config, inject } from './config/index.js'
 import { registerTools } from './agent/tools.js'
-import { registerEvents } from './agent/index.js'
 
-export { name, Config, inject }
+export const name = 'dsh-video-design'
+export const inject = ['tools']
 
-// ---- 插件入口 ----
-
-export function apply(ctx: Context, config: Config) {
-  registerTools(ctx, config)
-  registerEvents(ctx, config)
+export function apply(ctx: Context) {
+  registerTools(ctx)
 }
