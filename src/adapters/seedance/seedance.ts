@@ -18,7 +18,7 @@ export interface ShotJSON {
     windows?: { from: string; to: string; movement: string }[]
     axes: Record<string, string>
     cards?: string[]
-    /** 四要素基础卡（时间/空间/人物/事件）——每镜必填的「拍什么」地基，校验规则读 doctrine/foundation.md */
+    /** 基础面卡（景/人/交互/动线）——每镜必填的「拍什么」地基，校验规则读 doctrine/foundation.md */
     foundation?: Foundation
   }
   prompt_text?: string
@@ -200,7 +200,7 @@ export function buildVendorPrompt(shot: ShotJSON, opts: { photographic?: boolean
   if (extras.length) text += '；' + extras.join('，')
   if (cards?.length) text += '；手法：' + cards.join('、')
   if (shot.constraints?.negatives?.length) text += '；避免：' + shot.constraints.negatives.join('、')
-  // 四要素卡作尾缓冲：subject 已承载叙事+服化、轴值承载拍法词汇，foundation 是结构化的世界层副本——
+  // 基础面卡作尾缓冲：subject 已承载叙事+服化、轴值承载拍法词汇，foundation 是结构化的世界层副本——
   // 500 字超限时按「；」边界从尾砍，先丢冗余副本，拍法词汇与约束活下来（同镜双重描述的职责分离见 _compile 心法）
   if (shot.shot.foundation) text += '；' + renderFoundation(shot.shot.foundation)
   if (opts.photographic) text += '；真实摄影质感，电影级光影，避免插画卡通风格'

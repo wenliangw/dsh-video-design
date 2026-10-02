@@ -1,8 +1,9 @@
-// adapters/seedance/foundation.ts — 四要素基础卡（时间/空间/人物/事件）
-// 职责：装载 doctrine/foundation.md 的机器锚 → 泛型校验（必填/枚举/冲突/引用）→ 渲染进厂商 prompt。
-// 纪律：机制不写死内容——必填字段、枚举值、冲突规则、zh 标签、示例模板全部来自文件；
+// adapters/seedance/foundation.ts — 基础面卡（景→人→交互→动线）
+// 职责：装载 doctrine/foundation.md 的机器锚 → 泛型校验（必填/枚举/冲突/引用/持有物重述）→ 渲染进厂商 prompt。
+// 纪律：机制不写死内容——必填字段、枚举值、冲突规则、可选块、持有物重述文案、zh 标签、示例模板全部来自文件；
 //       改文件即改校验（与 11 域封闭轴同一模式：轴值住 md，校验器只做成员判定）。
-// 历史事故（我们的青春 EP001）：未定义空间几何 → 「道路纵深 + 横穿动线」违和；未定义人物画面位 → 跨镜位置漂移。
+// 历史事故（我们的青春 EP001）：未定义空间几何 → 「道路纵深 + 横穿动线」违和；未定义人物画面位 → 跨镜位置漂移；
+//       事件未重述持有物 → 人走后车留原地；无三锚无比例声明 → 腿身比例失真。
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'
@@ -16,16 +17,19 @@ function templatesRoot(): string {
   return path.join(MODULE_DIR, '..', '..', 'templates')
 }
 
-// ---------- 类型（四要素骨架 = 机制契约；枚举值 = 文件内容，类型层不写死） ----------
+// ---------- 类型（基础面骨架 = 机制契约；枚举值 = 文件内容，类型层不写死） ----------
 
-export interface FoundationTime {
-  period: string
-  lightState?: string
-  sequence?: string
+export interface FoundationAnchors {
+  ground: string
+  lightSource: string
+  scaleRef: string
 }
 
-export interface FoundationSpace {
+export interface FoundationScene {
   location: string
+  period: string
+  lightState?: string
+  anchors: FoundationAnchors
   geometry: { roadDirection: string }
   camera: { side: string; axis?: string }
   traffic: { screenPath: string; note?: string }
@@ -35,11 +39,20 @@ export interface FoundationSpace {
 export interface FoundationCharacter {
   id: string
   ref: string
+  /** 骨架比例：相对参照系描述（相对身高/头身比/与道具比例）——数字身高是弱锚 */
+  proportions: string
   position: { screen: string; depth: string }
   facing: string
   motion: string
   /** 随身持有物（「道具名（状态）」数组；不携带缺省） */
   props?: string[]
+}
+
+export interface FoundationInteraction {
+  groundContact: string
+  occlusion: string
+  scaleRatio: string
+  propStates: string
 }
 
 export interface FoundationEvent {
@@ -49,11 +62,19 @@ export interface FoundationEvent {
   durationSecs?: number
 }
 
-export interface Foundation {
-  time: FoundationTime
-  space: FoundationSpace
-  characters: FoundationCharacter[]
+export interface FoundationTimeline {
   events: FoundationEvent[]
+}
+
+export interface Foundation {
+  /** 景块（必填）：场景实体 + 三锚 + 机位世界方位 + 光照时辰 */
+  scene: FoundationScene
+  /** 人块（必填；空镜可为空数组） */
+  characters: FoundationCharacter[]
+  /** 交互块（必填）：接触落地/遮挡前后/人-景尺度比/道具恒存态 */
+  interaction: FoundationInteraction
+  /** 动线块（可选）：事件序列 + 每段重述恒存态；静态/无状态变化镜头整块缺省 */
+  timeline?: FoundationTimeline
 }
 
 // ---------- 规范装载（front-matter 机器锚，缓存） ----------
@@ -75,14 +96,18 @@ export interface FoundationSpec {
   required: RequiredEntry[]
   enums: Record<string, string[]>
   conflicts: ConflictEntry[]
+  /** 可整块缺省的顶层块（如 timeline）——块缺失时跳过该块下所有必填项 */
+  optionalBlocks: string[]
   reservedWho: string[]
+  /** 持有物重述规则文案（占位符：{{ch}} {{prop}} {{action}}） */
+  propRestateMessage: string
   zh: Record<string, Record<string, string>>
   example: Record<string, unknown>
 }
 
 let _spec: FoundationSpec | null = null
 
-/** 装载四要素规范（doctrine/foundation.md 的 machine anchor；随包航运，缺失即显式报错） */
+/** 装载基础面规范（doctrine/foundation.md 的 machine anchor；随包航运，缺失即显式报错） */
 export function loadFoundationSpec(): FoundationSpec {
   if (_spec) return _spec
   const file = path.join(templatesRoot(), 'doctrine', 'foundation.md')
@@ -90,20 +115,22 @@ export function loadFoundationSpec(): FoundationSpec {
   try {
     md = fs.readFileSync(file, 'utf-8')
   } catch {
-    throw new Error(`四要素基础卡规范缺失：${file}。foundation.md 应随包航运（lib/templates/doctrine/foundation.md），请检查安装。`)
+    throw new Error(`基础面卡规范缺失：${file}。foundation.md 应随包航运（lib/templates/doctrine/foundation.md），请检查安装。`)
   }
   const match = /^---\n([\s\S]*?)\n---\n?/.exec(md)
-  if (!match) throw new Error(`四要素基础卡规范损坏：${file} 缺少 YAML front-matter。`)
+  if (!match) throw new Error(`基础面卡规范损坏：${file} 缺少 YAML front-matter。`)
   const data = (yaml.load(match[1]) as Record<string, any>) ?? {}
   const required = (data.required ?? []) as RequiredEntry[]
   if (!Array.isArray(required) || required.length === 0) {
-    throw new Error(`四要素基础卡规范损坏：${file} front-matter 缺少 required 清单。`)
+    throw new Error(`基础面卡规范损坏：${file} front-matter 缺少 required 清单。`)
   }
   _spec = {
     required,
     enums: (data.enums ?? {}) as Record<string, string[]>,
     conflicts: (data.conflicts ?? []) as ConflictEntry[],
+    optionalBlocks: (data.optionalBlocks ?? []) as string[],
     reservedWho: (data.reservedWho ?? []) as string[],
+    propRestateMessage: (data.propRestateMessage ?? '事件未重述持有物「{{prop}}」（角色 {{ch}}）') as string,
     zh: (data.zh ?? {}) as Record<string, Record<string, string>>,
     example: (data.example ?? {}) as Record<string, unknown>,
   }
@@ -138,12 +165,17 @@ export function validateFoundation(f: Foundation | null | undefined): string[] {
   const spec = loadFoundationSpec()
   const errors: string[] = []
   if (!f || typeof f !== 'object') {
-    return ['shot.foundation 缺失——每镜必须声明四要素基础卡（时间/空间/人物/事件是任何镜头的必要定义；没有它，方向词会失去世界语义）。补卡后重提。']
+    return ['shot.foundation 缺失——每镜必须声明基础面卡（景→人→交互→动线：先立景、再入人、再定交互、可选加动线）。没有它，方向词会失去世界语义。补卡后重提。']
   }
   const record = f as unknown as Record<string, unknown>
 
-  // 1) 必填字段遍历
+  // 1) 必填字段遍历（可选块缺失时跳过该块下所有必填项）
   for (const entry of spec.required) {
+    const block = entry.path.split('.')[0]
+    if (spec.optionalBlocks.includes(block)) {
+      const present = record[block] !== undefined && record[block] !== null
+      if (!present) continue
+    }
     const nodes = getPath(record, entry.path)
     if (entry.kind === 'array' || entry.kind === 'arrayNonEmpty') {
       const arr = nodes[0]
@@ -168,7 +200,7 @@ export function validateFoundation(f: Foundation | null | undefined): string[] {
       continue
     }
     if (entry.kind === 'stringArray') {
-      // 每个节点都必须是「非空字符串数组」（events[].who 的 [] 展开后可能有多个 who 数组，逐个查）
+      // 每个节点都必须是「非空字符串数组」（timeline.events[].who 的 [] 展开后可能有多个 who 数组，逐个查）
       const ok = nodes.every(nd => Array.isArray(nd) && nd.every((x): x is string => typeof x === 'string' && x.trim() !== ''))
       if (!ok) {
         errors.push(`${entry.label}（${entry.path}）缺失、非数组或含空项/非字符串。`)
@@ -220,11 +252,11 @@ export function validateFoundation(f: Foundation | null | undefined): string[] {
   const ids = new Set<string>()
   for (const ch of chars) {
     if (!ch || typeof ch.id !== 'string' || ch.id.trim() === '') continue
-    if (ids.has(ch.id)) errors.push(`角色编号「${ch.id}」重复——id 必须唯一（events[].who 依赖编号引用）。`)
+    if (ids.has(ch.id)) errors.push(`角色编号「${ch.id}」重复——id 必须唯一（timeline.events[].who 依赖编号引用）。`)
     ids.add(ch.id)
   }
   const allowed = new Set<string>([...ids, ...spec.reservedWho])
-  const events = (record.events as FoundationEvent[]) ?? []
+  const events = ((record.timeline as FoundationTimeline | undefined)?.events ?? []) as FoundationEvent[]
   const seqs = new Set<number>()
   for (const ev of events) {
     if (!ev || typeof ev !== 'object') continue
@@ -241,10 +273,28 @@ export function validateFoundation(f: Foundation | null | undefined): string[] {
     }
   }
 
+  // 5) 持有物重述：props 声明的每个道具，该角色出场的每个事件动作都必须重述道具名（历史事故：S006 人走后车留原地）
+  const fmt = (tpl: string, m: Record<string, string>) =>
+    tpl.replace(/\{\{(\w+)\}\}/g, (_, k: string) => m[k] ?? '')
+  for (const ch of chars) {
+    if (!ch || !Array.isArray(ch.props) || typeof ch.id !== 'string') continue
+    for (const p of ch.props) {
+      if (typeof p !== 'string') continue
+      const name = (p.split('（')[0] ?? p).trim()
+      if (!name) continue
+      for (const ev of events) {
+        if (!ev || !Array.isArray(ev.who) || !ev.who.includes(ch.id)) continue
+        if (typeof ev.action !== 'string' || !ev.action.includes(name)) {
+          errors.push(fmt(spec.propRestateMessage, { ch: ch.ref ?? ch.id, prop: name, action: ev.action ?? '' }))
+        }
+      }
+    }
+  }
+
   return errors
 }
 
-// ---------- 渲染（zh 标签读自规范文件） ----------
+// ---------- 渲染（zh 标签读自规范文件；顺序 = 景→人→交互→动线） ----------
 
 export function renderFoundation(f: Foundation): string {
   const spec = loadFoundationSpec()
@@ -254,24 +304,33 @@ export function renderFoundation(f: Foundation): string {
     const d = zh['characters[].position.depth']?.[depth]
     return [s, d].filter(Boolean).join('·')
   }
-  // time.sequence 不渲染：剪辑次序供编辑/确认卡阅读，对生成模型无意义（且挤占 500 字预算）
-  const timeParts = [`时间：${f.time.period}`]
-  if (f.time.lightState) timeParts.push(f.time.lightState)
-  const sp = f.space
-  const roadZh = zh['space.geometry.roadDirection']?.[sp.geometry.roadDirection] ?? sp.geometry.roadDirection
-  const pathZh = zh['space.traffic.screenPath']?.[sp.traffic.screenPath] ?? sp.traffic.screenPath
-  const spaceParts = [`空间：${sp.location}`, roadZh, `相机${sp.camera.side}`]
-  if (sp.camera.axis) spaceParts.push(sp.camera.axis)
-  spaceParts.push(`动线${pathZh}`)
-  if (sp.traffic.note) spaceParts.push(sp.traffic.note)
+  const sc = f.scene
+  const roadZh = zh['scene.geometry.roadDirection']?.[sc.geometry.roadDirection] ?? sc.geometry.roadDirection
+  const pathZh = zh['scene.traffic.screenPath']?.[sc.traffic.screenPath] ?? sc.traffic.screenPath
+  const sceneParts = [
+    `景：${sc.location}`,
+    sc.period,
+    sc.lightState ?? '',
+    `地面${sc.anchors.ground}`,
+    `光源${sc.anchors.lightSource}`,
+    `尺度参照${sc.anchors.scaleRef}`,
+    roadZh,
+    `相机${sc.camera.side}`,
+    sc.camera.axis ?? '',
+    `动线${pathZh}`,
+    sc.traffic.note ?? '',
+  ].filter(Boolean)
   const chars = f.characters.length
     ? f.characters.map(c => {
         const carried = c.props?.length ? `持${c.props.join('、')}` : ''
-        return `${c.ref}(${[pos(c.position.screen, c.position.depth), c.facing, c.motion, carried].filter(Boolean).join('·')})`
+        return `${c.ref}(身比${c.proportions}·${pos(c.position.screen, c.position.depth)}·${c.facing}·${c.motion}${carried ? '·' + carried : ''})`
       }).join('；')
     : '无出镜人物'
-  const events = f.events.map(e => e.action).join('→')
-  return `四要素｜${timeParts.join('·')}｜${spaceParts.join('·')}｜人物：${chars}｜事件：${events}`
+  const ia = f.interaction
+  const interactionPart = `交互：落地${ia.groundContact}·遮挡${ia.occlusion}·尺度比${ia.scaleRatio}·恒存${ia.propStates}`
+  const evs = f.timeline?.events ?? []
+  const timelinePart = evs.length ? `动线：${evs.map(e => e.action).join('→')}` : '动线：静态无事件'
+  return `基础面｜${sceneParts.join('·')}｜人：${chars}｜${interactionPart}｜${timelinePart}`
 }
 
 /** 可复制模板（示例读自规范文件 example；附枚举速查） */
