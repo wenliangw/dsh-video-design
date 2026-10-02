@@ -26,10 +26,33 @@ function safeLabel(raw?: string): string {
   return `shot-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
 }
 
-/** 实验根目录：配置文件所在目录（没有配置就 cwd）下的 experiments/ */
-function experimentsRoot(cwd: string, configFile: string | null): string {
-  const base = configFile ? path.dirname(configFile) : path.resolve(cwd)
+/** 实验根目录：配置文件所在目录（没有配置就锚点目录）下的 experiments/ */
+function experimentsRoot(anchor: string, configFile: string | null): string {
+  const base = configFile ? path.dirname(configFile) : path.resolve(anchor)
   return path.join(base, EXPERIMENTS_DIR)
+}
+
+/**
+ * 会话工作区：从 execute 上下文取 agent.id → ctx.sessions.get(id).header.cwd
+ * （dsh 会话创建时的工作目录，即用户工作区，非进程启动目录）。任何一步取不到
+ * （无 agent / 宿主无 sessions 服务 / 会话无 cwd / 非 dsh 宿主）都返回 null，由调用方回退。
+ */
+export function sessionWorkspace(ctx: Context, exec: unknown): string | null {
+  try {
+    const agentId = (exec as { agent?: { id?: unknown } })?.agent?.id
+    if (typeof agentId !== 'string') return null
+    const sessions = (ctx as unknown as { sessions?: { get?: (id: string) => unknown } })?.sessions
+    if (!sessions || typeof sessions.get !== 'function') return null
+    const cwd = (sessions.get(agentId) as { header?: { cwd?: unknown } } | undefined)?.header?.cwd
+    return typeof cwd === 'string' && cwd.length > 0 ? cwd : null
+  } catch {
+    return null
+  }
+}
+
+/** 工具目录锚点：会话工作区优先（用户工作区），拿不到再回退进程 cwd（测试/直调/无会话场景） */
+function anchorOf(ctx: Context, exec: unknown): string {
+  return sessionWorkspace(ctx, exec) ?? process.cwd()
 }
 
 /** 实验记录（三处事实：这镜怎么提的、发给了哪个模型哪个地址、结果在哪 + 人工验收标签） */
@@ -85,12 +108,14 @@ function findRecordByTask(root: string, taskId: string): ExperimentRecord | null
 }
 
 /** 配置缺失 → 可操作中文报错（不给任何内置默认值，只指路） */
-function configError(missing: string[], corrupt: Error | null, configFile: string | null): string | undefined {
-  if (corrupt) return `.dvd.config.json 存在但 JSON 损坏：${corrupt.message}——修复后再试。`
+function configError(missing: string[], corrupt: Error | null, configFile: string | null, startDir: string): string | undefined {
+  if (corrupt) return `${configFile} 存在但 JSON 损坏：${corrupt.message}——修复后再试。`
   if (!missing.length) return undefined
   const items = missing.map(k => `- ${k}`).join('\n')
-  return `缺少用户配置（插件不内置任何模型/地址事实，缺什么只列什么）：\n${items}\n` +
-    `填法：在 ${configFile ?? '当前目录新建 .dvd.config.json'} 里写 { "apiKey": "...", "model": "...", "createUrl": "创建任务的完整 API 地址", "queryUrl": "查询任务的完整 API 地址，含 {task_id} 占位符" }；` +
+  const where = configFile
+    ? `${configFile} 已读到，但缺以下字段：`
+    : `已从 ${startDir} 向上逐级查找 .dvd.config.json，未找到。文件应包含：{ "apiKey": "...", "model": "...", "createUrl": "创建任务的完整 API 地址", "queryUrl": "查询任务的完整 API 地址模板（含 {task_id} 占位符）" }`
+  return `缺少用户配置（插件不内置任何模型/地址事实，缺什么只列什么）：\n${items}\n${where}\n` +
     '上述四项也可分别用环境变量 SEEDANCE_API_KEY / SEEDANCE_MODEL / SEEDANCE_CREATE_URL / SEEDANCE_QUERY_URL 提供（密钥推荐走环境变量，不进文件）。'
 }
 
@@ -112,10 +137,10 @@ export function registerTools(ctx: Context): void {
       schema: { type: 'string' },
       render: (_args: any, value: any) => [{ type: 'text', text: value }],
     },
-    async execute(args: { prompt: string; label?: string; extra?: string; dry_run?: boolean }, _exec: any) {
-      const cwd = process.cwd()
-      const cfg = resolveConfig(cwd)
-      const cfgErr = configError(cfg.missing, cfg.corrupt, cfg.file)
+    async execute(args: { prompt: string; label?: string; extra?: string; dry_run?: boolean }, exec: unknown) {
+      const anchor = anchorOf(ctx, exec)
+      const cfg = resolveConfig(anchor)
+      const cfgErr = configError(cfg.missing, cfg.corrupt, cfg.file, anchor)
       if (cfgErr) return cfgErr
 
       const queryErr = queryUrlError(cfg.queryUrl!)
@@ -132,7 +157,7 @@ export function registerTools(ctx: Context): void {
 
       const { body, stripped } = buildBody(cfg.model!, args.prompt, extra)
       const label = safeLabel(args.label)
-      const root = experimentsRoot(cwd, cfg.file)
+      const root = experimentsRoot(anchor, cfg.file)
 
       const preview = [
         '## 🎬 提交预览（真实生成 = 花钱，请确认再提）',
@@ -188,13 +213,13 @@ export function registerTools(ctx: Context): void {
       schema: { type: 'string' },
       render: (_args: any, value: any) => [{ type: 'text', text: value }],
     },
-    async execute(args: { task_id: string; label?: string }, _exec: any) {
-      const cwd = process.cwd()
-      const cfg = resolveConfig(cwd)
+    async execute(args: { task_id: string; label?: string }, exec: unknown) {
+      const anchor = anchorOf(ctx, exec)
+      const cfg = resolveConfig(anchor)
       if (!cfg.apiKey || !cfg.queryUrl) {
         return `缺少配置（apiKey/queryUrl），没法查询。${cfg.missing.length ? '当前缺：' + cfg.missing.join('、') : ''}`
       }
-      const root = experimentsRoot(cwd, cfg.file)
+      const root = experimentsRoot(anchor, cfg.file)
       const existing = findRecordByTask(root, args.task_id)
       const label = safeLabel(args.label ?? existing?.label ?? args.task_id.replace(/[^A-Za-z0-9_-]/g, '-'))
 
