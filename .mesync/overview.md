@@ -25,6 +25,8 @@ v2 当前最小核（`v2` 分支）：**纯提示词试验台**——两个工�
 - `src/adapters/seedance/contract.ts` — 响应语义词汇（任务状态词/HTTP 语义；v1 六个真实任务验证）
 - `src/workspace/config.ts` — 用户配置装载（文件 > 环境变量；缺什么列什么）
 - `test/redline.test.ts` — 红线守护：源码禁出现完整网址/模型版本串（用户指令机器化）
+- `.mesync/skills/_shot_prompt.skill.md` — 一镜提示词编写心法（shot_gen 输入控制层：四段式/每拍一动词/人物定卡/禁拍摄手法词/事实与假设分开）
+- `docs/h0-experiment.md` — H0 能力摸底实验设计（动线轴逐档格网 + 恒定人物定卡）
 
 ## 目录约定（重要）
 
