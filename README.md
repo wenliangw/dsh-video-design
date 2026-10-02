@@ -35,6 +35,8 @@
 
 ## 实验工作流（H0 能力摸底）
 
+完整的 H0 实验设计（基线两格、每格 3 次、判定标准先写死、验收失败类别）见 [docs/h0-experiment.md](docs/h0-experiment.md)。操作节奏：
+
 1. 配好 `.dvd.config.json` → `shot_gen` 先 `dry_run=true` 看请求体与目标地址；
 2. 确认无误去掉 `dry_run` 真提交（每次提交 = 一次真实计费）；
 3. `shot_task` 轮询取片；
