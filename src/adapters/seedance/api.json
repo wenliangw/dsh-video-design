@@ -8,7 +8,12 @@
     }
   },
   "request": {
-    "promptMaxCharsZh": 500,
+    "promptRecommendation": {
+      "recommendedCharsZh": 500,
+      "recommendedWordsEn": 1000,
+      "hardLimit": false,
+      "note": "官方参数表建议值：中文≤500字/英文≤1000词——是建议不是硬性限制，超长请求不会被拒绝；插件默认按此值兜底裁剪（行为配置 promptMaxCharsZh 可调，0=不裁剪）"
+    },
     "watermarkDefault": false
   },
   "task": {

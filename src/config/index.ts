@@ -14,6 +14,9 @@ export interface Config {
   defaultQuality: '480p' | '720p' | '1080p'
   /** 默认画幅 */
   defaultAspectRatio: string
+  /** 厂商层提示词裁剪上限（字）。官方参数表建议中文 ≤500 / 英文 ≤1000——是建议值、非硬性限制（超长不被拒，但易信息分散、成片缺元素）。
+   *  插件默认按 500 兜底裁剪；0 = 不裁剪，超长原样提交。 */
+  promptMaxCharsZh: number
   /** 预算硬闸（元；费率未校准时闸门放行并明示，0 = 不限） */
   budgetCredits: number
   /** 是否默认把参考图按 reference_image role 走参考生视频（仅 2.5/2.0 系列支持） */
@@ -29,6 +32,7 @@ export const Config: Schema<Config> = Schema.object({
   defaultDuration: Schema.number().default(5),
   defaultQuality: Schema.union(['480p', '720p', '1080p']).default('720p'),
   defaultAspectRatio: Schema.string().default('16:9'),
+  promptMaxCharsZh: Schema.number().default(500),
   budgetCredits: Schema.number().default(0),
   referenceMode: Schema.boolean().default(true),
   maxRecallDecisions: Schema.number().default(5),

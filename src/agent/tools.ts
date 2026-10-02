@@ -431,6 +431,8 @@ export function registerTools(ctx: Context, config: Config): void {
         referenceMode: config.referenceMode,
         referenceUrls,
         caps,
+        clampMax:
+          typeof config.promptMaxCharsZh === 'number' ? config.promptMaxCharsZh : undefined,
       })
 
       const recordFile = path.join(vctx.storyRoot!, episode, 'shots', `${shot.shot.index}.json`)
@@ -439,7 +441,7 @@ export function registerTools(ctx: Context, config: Config): void {
         '## 🎬 镜头编译预览',
         `**标准层（可倒解析回 11 域）**：${buildStandardSentence(shot)}`,
         `**厂商层（${adapterName} prompt 全文）**：${plan.vendorPrompt}`,
-        ...(plan.overflow ? [`⚠️ **超限兜底**：厂商 prompt 原文 ${plan.overflow.originalChars} 字 > 官方建议 ${plan.overflow.limit} 字，已按「；」边界裁剪尾部 ${plan.overflow.droppedChars} 字（被裁片段：${plan.overflow.droppedTail}）。消除方法：拆镜/减事件复杂度（一镜一个信息落点），比放宽字数更对症。`] : []),
+        ...(plan.overflow ? [`⚠️ **超限裁剪**：厂商 prompt 原文 ${plan.overflow.originalChars} 字 > 插件裁剪上限 ${plan.overflow.limit} 字（默认=官方建议值 500 字；官方口径是「建议」不是「硬限制」，超长不会被拒，但易信息分散、成片缺元素），已按「；」边界裁剪尾部 ${plan.overflow.droppedChars} 字（被裁片段：${plan.overflow.droppedTail}）。消除方法：拆镜/减事件复杂度（一镜一个信息落点）；确要全文超长提交可在插件配置把 promptMaxCharsZh 设为 0 关闭裁剪。`] : []),
         `**参数**：adapter=${adapterName}｜family=${plan.family}（caps 用户声明）｜model=${plan.model}｜duration=${plan.duration}s｜resolution=${plan.resolution}｜ratio=${plan.ratio}${plan.body.generate_audio === false ? '｜generate_audio=false（v1 无声承诺）' : ''}`,
         `**基础面卡（景→人→交互→动线）**：${renderFoundation(shot.shot.foundation!)}`,
         referenceUrls.length ? `**参考图**：${referenceUrls.length} 张，role=${plan.referenceRoles.join('/')}` : '**参考图**：无（纯文生视频）',

@@ -53,7 +53,7 @@ describe('两层提示词转译', () => {
     expect(s).toContain('景别近景')
     expect(s).toContain('避免：避免出现车辆')
   })
-  it('prompt 超官方建议（500 字）按分句边界截断且主体在前', () => {
+  it('prompt 超插件默认裁剪上限（500 字=官方建议值）按分句边界截断且主体在前', () => {
     const long = '少年' + '冲'.repeat(700) + '；尾部补充'
     const cut = clampPrompt(long)
     expect(cut.length).toBeLessThanOrEqual(501)
@@ -234,5 +234,13 @@ describe('clampPromptReport 溢出报告（不静默牺牲）', () => {
     expect(overflow!.originalChars).toBe(600)
     expect(overflow!.droppedChars).toBeGreaterThan(0)
     expect(overflow!.droppedTail.length).toBeGreaterThan(0)
+  })
+
+  it('裁剪上限 0 = 关闭裁剪（官方口径是建议非硬限制，可超长原样提交）', () => {
+    const long = '少年' + '冲'.repeat(700)
+    expect(clampPrompt(long, 0)).toBe(long)
+    const { prompt, overflow } = clampPromptReport(long, 0)
+    expect(prompt).toBe(long)
+    expect(overflow).toBeNull()
   })
 })

@@ -36,7 +36,12 @@ interface SeedanceContract {
     paths: { createGeneration: string; getTask: string }
   }
   request: {
-    promptMaxCharsZh: number
+    /** 官方参数表建议值的准确转录（建议非硬限制：超长不会被厂商拒绝） */
+    promptRecommendation: {
+      recommendedCharsZh: number
+      recommendedWordsEn: number
+      hardLimit: boolean
+    }
     watermarkDefault: boolean
   }
   task: {
@@ -170,7 +175,7 @@ export function buildStandardSentence(shot: ShotJSON): string {
   return clauses.join(' | ')
 }
 
-/** 厂商层：叙述流单一字符串（官方建议中文 ≤500 字，见契约 promptMaxCharsZh） */
+/** 厂商层：叙述流单一字符串（官方参数表建议中文 ≤500 字 / 英文 ≤1000 词——建议值、非硬性限制，见契约 request.promptRecommendation） */
 export function buildVendorPrompt(shot: ShotJSON, opts: { photographic?: boolean } = {}): string {
   const { subject, windows, axes, cards } = shot.shot
   let text: string
@@ -201,23 +206,25 @@ export function buildVendorPrompt(shot: ShotJSON, opts: { photographic?: boolean
   if (cards?.length) text += '；手法：' + cards.join('、')
   if (shot.constraints?.negatives?.length) text += '；避免：' + shot.constraints.negatives.join('、')
   // 基础面卡作尾缓冲：subject 已承载叙事+服化、轴值承载拍法词汇，foundation 是结构化的世界层副本——
-  // 500 字超限时按「；」边界从尾砍，先丢冗余副本，拍法词汇与约束活下来（同镜双重描述的职责分离见 _compile 心法）
+  // 超裁剪上限（默认官方建议值 500 字）时按「；」边界从尾砍，先丢冗余副本，拍法词汇与约束活下来（同镜双重描述的职责分离见 _compile 心法）
   if (shot.shot.foundation) text += '；' + renderFoundation(shot.shot.foundation)
   if (opts.photographic) text += '；真实摄影质感，电影级光影，避免插画卡通风格'
-  // 超长兜底：官方建议中文 ≤500 字（过量信息分散、成片缺元素）；按「；」边界整体砍尾部子句
+  // 超长兜底（插件工程策略，非厂商限制）：官方参数表建议中文 ≤500 字 / 英文 ≤1000 词（过量信息分散、成片缺元素）；
+  // 按「；」边界整体砍尾部子句；上限可经行为配置 promptMaxCharsZh 调整，设 0 关闭裁剪
   return clampPrompt(text)
 }
 
-/** prompt 长度兜底：超限按「；」边界整体砍尾部子句（主体从句在首部，不做字级截断） */
-export function clampPrompt(text: string, max = contract().request.promptMaxCharsZh): string {
-  if (text.length <= max) return text
+/** prompt 长度兜底（插件工程策略）：超限按「；」边界整体砍尾部子句（主体从句在首部，不做字级截断）。
+ *  默认上限取自契约官方建议值（中文 ≤500 字）；max <= 0 = 关闭裁剪、原样返回。 */
+export function clampPrompt(text: string, max = contract().request.promptRecommendation.recommendedCharsZh): string {
+  if (max <= 0 || text.length <= max) return text
   const cut = text.slice(0, max)
   const lastSep = cut.lastIndexOf('；')
   return cut.slice(0, lastSep > max * 0.6 ? lastSep : cut.length) + '；'
 }
 
 export interface PromptOverflow {
-  /** 契约建议上限（官方建议中文 ≤500 字） */
+  /** 插件裁剪上限（默认 = 官方建议值 500 字；建议值非厂商硬限制） */
   limit: number
   /** 裁剪前原文长度 */
   originalChars: number
@@ -226,10 +233,10 @@ export interface PromptOverflow {
   droppedTail: string
 }
 
-/** 兜底裁剪 + 溢出报告：不静默牺牲——call 方（dry_run 预览）必须把裁了什么明示给用户 */
-export function clampPromptReport(text: string): { prompt: string; overflow: PromptOverflow | null } {
-  const limit = contract().request.promptMaxCharsZh
-  if (text.length <= limit) return { prompt: text, overflow: null }
+/** 兜底裁剪 + 溢出报告：不静默牺牲——call 方（dry_run 预览）必须把裁了什么明示给用户。
+ *  limit <= 0 = 裁剪已关闭（行为配置 promptMaxCharsZh=0），原样提交、不产出溢出报告。 */
+export function clampPromptReport(text: string, limit = contract().request.promptRecommendation.recommendedCharsZh): { prompt: string; overflow: PromptOverflow | null } {
+  if (limit <= 0 || text.length <= limit) return { prompt: text, overflow: null }
   const prompt = clampPrompt(text, limit)
   const droppedTail = text.slice(prompt.length - 1)
   return {
@@ -266,7 +273,7 @@ export interface SeedanceBodyRequest {
 export interface SeedancePlan {
   /** 厂商 prompt 全文（content 首条 text） */
   vendorPrompt: string
-  /** 超限裁剪明细（null = 未超限） */
+  /** 超限裁剪明细（null = 未超限或裁剪已关闭） */
   overflow: PromptOverflow | null
   model: string
   family: string
@@ -319,17 +326,20 @@ export function toRequest(
     referenceUrls?: string[]
     /** 已解析的家族能力（resolveCapabilities 产物） */
     caps: FamilyCaps
+    /** 厂商层裁剪上限（行为配置 promptMaxCharsZh；0 = 关闭裁剪；缺省用官方建议值 500） */
+    clampMax?: number
   },
 ): SeedancePlan {
   const caps = opts.caps
+  const clampMax = opts.clampMax ?? contract().request.promptRecommendation.recommendedCharsZh
   const urls = opts.referenceUrls ?? []
   const [dMin, dMax] = caps.durationRange
   const duration = Math.min(dMax, Math.max(dMin, Math.round(opts.duration)))
   const content: SeedanceContentItem[] = []
-  const clamped = clampPromptReport(buildVendorPrompt(shot, { photographic: urls.length > 0 }))
+  const clamped = clampPromptReport(buildVendorPrompt(shot, { photographic: urls.length > 0 }), clampMax)
   let vendorPrompt = clamped.prompt
   if (shot.prompt_text) {
-    const clamped2 = clampPromptReport(vendorPrompt + '；' + shot.prompt_text.trim())
+    const clamped2 = clampPromptReport(vendorPrompt + '；' + shot.prompt_text.trim(), clampMax)
     vendorPrompt = clamped2.prompt
     clamped.overflow = clamped2.overflow
   }
@@ -349,7 +359,7 @@ export function toRequest(
 
   return {
     vendorPrompt,
-    /** 超官方建议字数时的溢出明细（null = 未超限）；dry_run 预览据此明示被裁内容 */
+    /** 超过插件裁剪上限时的溢出明细（null = 未超限或裁剪已关闭）；dry_run 预览据此明示被裁内容 */
     overflow: clamped.overflow,
     model: opts.model,
     family: caps.family,

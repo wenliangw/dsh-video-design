@@ -86,7 +86,7 @@
 
 | type | 付档 | role 取值 |
 |---|---|---|
-| `text` | `text` | 提示词正文（中文 ≤500 字 / 英文 ≤1000 词，官方建议） |
+| `text` | `text` | 提示词正文（官方建议：中文 ≤500 字 / 英文 ≤1000 词——「建议」非「硬限制」，超长不会被拒） |
 | `image_url` | `url`（HTTPS）/ 素材 ID `asset://<id>` / base64 | `first_frame`（首帧）、`last_frame`（尾帧）、`reference_image`（参考图，仅 2.5/2.0 系列） |
 | `video_url` | `url` / 素材 ID | `reference_video`（参考视频，2.5/2.0 系列） |
 | `audio_url` | `url` | `reference_audio`（参考音频，2.5/2.0 系列） |
@@ -116,7 +116,7 @@
 - **创建响应**：仅返回任务 `id`（无状态字段）；插件落盘初始状态 `pending`（本地词汇），真实进度以查询 API 为准。
 - **任务状态词汇（官方）**：`queued`（排队中）/ `running`（运行中）/ `succeeded`（成功）/ `failed`（失败）/ `expired`（超时，运行/排队超 `execution_expires_after`）
 - **成片位置**：查询响应 `content.video_url`（提取器兼容 `output.video_url` / 顶层 `video_url` 兜底）。
-- **提示词建议**：中文 ≤500 字、英文 ≤1000 词——超长易信息分散、成片缺元素。
+- **提示词建议**：官方口径 =「建议」非「硬限制」——中文 ≤500 字、英文 ≤1000 词；超长不会被厂商拒绝，但易信息分散、成片缺元素。插件默认按 500 字兜底裁剪（行为配置 `promptMaxCharsZh` 可调，0 = 关闭裁剪、超长原样提交）。
 
 ## 错误码
 
