@@ -26,9 +26,32 @@ function safeLabel(raw?: string): string {
   return `shot-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
 }
 
-/** 实验根目录：工作区根（找不到标记则退回 cwd）下的 experiments/ */
-function experimentsRoot(workspaceRoot: string | null, cwd: string): string {
-  return path.join(workspaceRoot ?? path.resolve(cwd), EXPERIMENTS_DIR)
+/** 实验根目录：工作区根（找不到标记则退回起点目录）下的 experiments/ */
+function experimentsRoot(workspaceRoot: string | null, startDir: string): string {
+  return path.join(workspaceRoot ?? path.resolve(startDir), EXPERIMENTS_DIR)
+}
+
+/**
+ * 会话工作区【宿主源码考证事实，非猜测】：
+ *   exec.agent?.session?.header?.cwd
+ * 类型定义链（全部在已安装宿主包里有明文）：
+ *   ToolRunContext.agent?: Agent —— "set by the agent loop"（@deepseek-ai/dsh-tools）
+ *   Agent.session: Session —— 活会话对象直接挂在 agent 上（@deepseek-ai/dsh-agent runtime-types）
+ *   Session.header: SessionHeader —— "always present"（@deepseek-ai/dsh-session）
+ *   SessionHeader.cwd?: string —— "Absolute working directory the session was created in (if any)"
+ * 即「会话创建时的工作目录」= 用户在哪个工作区开的这个会话。
+ * v1 master 源码注释佐证：「工具侧没有 agent 引用时，用 process.cwd() 兜底」——
+ * master 作者当时想要的就是会话引用，只是工具侧拿不到；现宿主已投递，直接使用。
+ * 任何一步缺失/异常 → null，调用方回退 process.cwd()。
+ */
+export function sessionWorkspace(exec: unknown): string | null {
+  try {
+    const agent = (exec as { agent?: { session?: { header?: { cwd?: unknown } } } } | undefined)?.agent
+    const cwd = agent?.session?.header?.cwd
+    return typeof cwd === 'string' && cwd.length > 0 ? cwd : null
+  } catch {
+    return null
+  }
 }
 
 /** 实验记录（三处事实：这镜怎么提的、发给了哪个模型哪个地址、结果在哪 + 人工验收标签） */
@@ -83,8 +106,8 @@ function findRecordByTask(root: string, taskId: string): ExperimentRecord | null
   return null
 }
 
-/** 配置缺失 → 可操作中文报错（不给任何内置默认值，只指路） */
-function configError(missing: string[], corrupt: Error | null, workspaceRoot: string | null, file: string | null, cwd: string): string | undefined {
+/** 配置缺失 → 可操作中文报错（不给任何内置默认值，只指路）；startLabel 说明查找起点来源（会话工作区/进程兜底） */
+function configError(missing: string[], corrupt: Error | null, workspaceRoot: string | null, file: string | null, cwd: string, startLabel: string): string | undefined {
   if (corrupt) return `${file} 存在但 JSON 损坏：${corrupt.message}——修复后再试。`
   if (!missing.length) return undefined
   const items = missing.map(k => `- ${k}`).join('\n')
@@ -92,7 +115,7 @@ function configError(missing: string[], corrupt: Error | null, workspaceRoot: st
     ? (file
       ? `${file} 已读到，但缺以下字段：`
       : `工作区根 ${workspaceRoot} 下没有 .dvd.config.json。该文件应包含：{ "apiKey": "...", "model": "...", "createUrl": "创建任务的完整 API 地址", "queryUrl": "查询任务的完整 API 地址模板（含 {task_id} 占位符）" }`)
-    : `已从 ${cwd} 向上逐级查找工作区标记目录 .dvd，未找到——当前不在视频工作区内。请在视频工作区（含 .dvd 目录）里开 dsh 会话再调用本工具。`
+    : `已从 ${cwd}（${startLabel}）向上逐级查找工作区标记目录 .dvd，未找到——当前不在视频工作区内。请在视频工作区（含 .dvd 目录）里开 dsh 会话再调用本工具。`
   return `缺少用户配置（插件不内置任何模型/地址事实，缺什么只列什么）：\n${items}\n${where}\n` +
     '上述四项也可分别用环境变量 SEEDANCE_API_KEY / SEEDANCE_MODEL / SEEDANCE_CREATE_URL / SEEDANCE_QUERY_URL 提供（密钥推荐走环境变量，不进文件）。'
 }
@@ -115,10 +138,12 @@ export function registerTools(ctx: Context): void {
       schema: { type: 'string' },
       render: (_args: any, value: any) => [{ type: 'text', text: value }],
     },
-    async execute(args: { prompt: string; label?: string; extra?: string; dry_run?: boolean }, _exec: unknown) {
-      const cwd = process.cwd()
-      const cfg = resolveConfig(cwd)
-      const cfgErr = configError(cfg.missing, cfg.corrupt, cfg.workspaceRoot, cfg.file, cwd)
+    async execute(args: { prompt: string; label?: string; extra?: string; dry_run?: boolean }, exec: unknown) {
+      const start = sessionWorkspace(exec)
+      const startLabel = start ? '会话工作区' : '服务器进程目录（兜底）'
+      const startDir = start ?? process.cwd()
+      const cfg = resolveConfig(startDir)
+      const cfgErr = configError(cfg.missing, cfg.corrupt, cfg.workspaceRoot, cfg.file, startDir, startLabel)
       if (cfgErr) return cfgErr
 
       const queryErr = queryUrlError(cfg.queryUrl!)
@@ -135,7 +160,7 @@ export function registerTools(ctx: Context): void {
 
       const { body, stripped } = buildBody(cfg.model!, args.prompt, extra)
       const label = safeLabel(args.label)
-      const root = experimentsRoot(cfg.workspaceRoot, cwd)
+      const root = experimentsRoot(cfg.workspaceRoot, startDir)
 
       const preview = [
         '## 🎬 提交预览（真实生成 = 花钱，请确认再提）',
@@ -191,13 +216,13 @@ export function registerTools(ctx: Context): void {
       schema: { type: 'string' },
       render: (_args: any, value: any) => [{ type: 'text', text: value }],
     },
-    async execute(args: { task_id: string; label?: string }, _exec: unknown) {
-      const cwd = process.cwd()
-      const cfg = resolveConfig(cwd)
+    async execute(args: { task_id: string; label?: string }, exec: unknown) {
+      const startDir = sessionWorkspace(exec) ?? process.cwd()
+      const cfg = resolveConfig(startDir)
       if (!cfg.apiKey || !cfg.queryUrl) {
         return `缺少配置（apiKey/queryUrl），没法查询。${cfg.missing.length ? '当前缺：' + cfg.missing.join('、') : ''}`
       }
-      const root = experimentsRoot(cfg.workspaceRoot, cwd)
+      const root = experimentsRoot(cfg.workspaceRoot, startDir)
       const existing = findRecordByTask(root, args.task_id)
       const label = safeLabel(args.label ?? existing?.label ?? args.task_id.replace(/[^A-Za-z0-9_-]/g, '-'))
 
