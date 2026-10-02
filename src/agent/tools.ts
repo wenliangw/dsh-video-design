@@ -32,7 +32,7 @@ function experimentsRoot(cwd: string, configFile: string | null): string {
   return path.join(base, EXPERIMENTS_DIR)
 }
 
-/** 实验记录（三处事实：这镜怎么提的、发给了哪个模型哪个地址、结果在哪） */
+/** 实验记录（三处事实：这镜怎么提的、发给了哪个模型哪个地址、结果在哪 + 人工验收标签） */
 export interface ExperimentRecord {
   label: string
   prompt: string
@@ -47,6 +47,10 @@ export interface ExperimentRecord {
   videoUrl?: string
   mp4File?: string
   lastError?: string
+  /** 人工验收：可用 / 不可用（看完片后回填） */
+  verdict?: string
+  /** 验收原因一句话（失败时可带类别标签，见 docs/h0-experiment.md 评价表） */
+  verdictNote?: string
 }
 
 export function recordFile(root: string, label: string): string {
@@ -233,7 +237,7 @@ export function registerTools(ctx: Context): void {
         mp4File: mp4,
       })
       return `✅ 任务 ${args.task_id} 出片完成：${mp4}（${Math.round(buf.length / 1024)} KB）\n` +
-        `实验记录：${recordFile(root, label)}。看完片后告诉我评价（可用/不可用+一句原因），我记进实验记录。`
+        `实验记录：${recordFile(root, label)}。看完片后告诉我评价（可用/不可用 + 一句原因），我写回实验记录的 verdict/verdictNote 字段。`
     },
   }))
 }
