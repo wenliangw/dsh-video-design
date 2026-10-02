@@ -18,8 +18,7 @@
 
 ## 用户配置
 
-`.dvd.config.json`（**从锚点目录向上递归查找**；也可全部走环境变量，密钥推荐走环境变量）：
-
+`.dvd.config.json`（**工作区根**放置；也可全部走环境变量，密钥推荐走环境变量）：
 ```json
 {
   "apiKey": "…",
@@ -29,9 +28,9 @@
 }
 ```
 
-环境变量通道：`SEEDANCE_API_KEY` / `SEEDANCE_MODEL` / `SEEDANCE_CREATE_URL` / `SEEDANCE_QUERY_URL`；锚点通道：`SEEDANCE_WORKSPACE`（视频工作区绝对路径，见下）。
+环境变量通道：`SEEDANCE_API_KEY` / `SEEDANCE_MODEL` / `SEEDANCE_CREATE_URL` / `SEEDANCE_QUERY_URL`。
 
-**查找起点三级优先级**：`SEEDANCE_WORKSPACE`（你指定的固定视频工作区，任何项目会话里调用都命中）> 会话工作区（在视频工作区开会话时自然命中）> 进程启动目录（兜底）。`experiments/` 落在同一锚点目录。插件源码放哪个仓库都不影响查找——源码目录与用户工作区彼此独立。
+**发现机制（master 已验证实现）**：从当前目录向上找 `.dvd` 目录标记（只认目录），命中处即视频工作区根，`.dvd.config.json` 就放在工作区根（与 `.dvd/` 同级）。在视频工作区里开 dsh 会话时工具自然命中配置；`experiments/` 落在工作区根下。不在工作区（找不到 `.dvd`）时工具如实提示，不猜任何备选路径。插件源码放哪个仓库都不影响查找。
 
 注意：示例地址不写在这里——把它写死在本 README 就等于插件内置了地址事实。**请把你实际开通的控制台地址填进配置**，插件会用你填的每一个字符。
 
